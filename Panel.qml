@@ -53,13 +53,12 @@ Panel {
   readonly property real yearDone: Model.yearProgress(today.getFullYear(), today.getMonth(), today.getDate())
   readonly property int yearDonePercent: Model.yearProgressPercent(today.getFullYear(), today.getMonth(), today.getDate())
 
-  // Memento mori, opt-in. Upstream hides the life bar behind a double-tap on
-  // the year bar, which means anyone can find it by accident; here the whole
-  // feature — the gesture included — stays inert until "mementoMori": true is
-  // in this widget's shell.json entry. Once it is on, it behaves exactly as
-  // upstream: double-tap the year bar for BORN / LIVE TO, double-tap the life
-  // bar to put it away. Without a birth year the bar stays hidden either way.
-  readonly property bool mementoMori: String(setting("mementoMori", false)) === "true"
+  // Memento mori, on by default so this widget behaves like the upstream clock
+  // it was forked from. "mementoMori": false in this widget's shell.json entry
+  // takes it out — the life bar and the double-tap on the year bar that reveals
+  // it — for anyone who would rather not be reminded. Default true, so only an
+  // explicit false counts.
+  readonly property bool mementoMori: String(setting("mementoMori", true)) !== "false"
   readonly property int birthYear: mementoMori ? Model.parseBirthYear(setting("birthYear", 0), today.getFullYear()) : 0
   readonly property int age: Model.ageFromBirthYear(birthYear, today.getFullYear())
   readonly property int lifeExpectancy: Model.parseLifeExpectancy(setting("lifeExpectancy", 0))

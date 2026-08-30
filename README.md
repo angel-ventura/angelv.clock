@@ -13,10 +13,8 @@ Based on Omarchy's built-in `omarchy.clock` widget — see
   quoted in someone else's zone lands in yours at a glance.
 - **The home row is detected from `timedatectl`**, so it is always this
   machine's real zone. You never list it yourself.
-- **Memento mori is opt-in.** Upstream hides the life bar behind a double-tap
-  on the year bar, where you can find it by accident. Here the whole feature —
-  the gesture included — stays inert until you ask for it. See
-  [Memento mori](#memento-mori).
+- **Memento mori can be switched off.** Set `"mementoMori": false` and the life
+  bar and its double-tap gesture are gone. On by default, as upstream.
 
 Everything themes with Omarchy: there is no hardcoded colour in the plugin, every
 value goes through `Color.*`, `Style.*`, or `bar.foreground`.
@@ -63,37 +61,13 @@ The zones are configuration, not code. Edit this widget's entry in
 | `homeName` | The **label** for the home row only — the zone itself is detected |
 | `homeHour12` | 12-hour clock for the home row |
 | `zones` | IANA zone names to show as extra rows |
-| `mementoMori` | `true` turns the life bar on. Off by default |
+| `mementoMori` | `false` removes the life bar and its gesture. On by default |
 
 Notes:
 
 - **Never put your home zone in `zones`** — it is added automatically.
 - Rows sort by UTC offset, west to east, whatever order you write them in.
 - Changes apply the **next time you open the panel**, not while it is open.
-
-## Memento mori
-
-Off by default. To switch it on, add this to the widget's entry in
-`shell.json`:
-
-```json
-"mementoMori": true
-```
-
-Then double-tap the year bar in the panel and it asks for **BORN** and
-**LIVE TO** — Tab moves between the two, Enter saves, Escape cancels. A LIFE
-bar appears under the year bar showing how much of that span is behind you.
-Double-tap the life bar to put it away again; your expectancy stays in the
-config, so setting a birth year later brings your own number back rather than
-the default of 90.
-
-A birth year rather than an age, so the bar keeps counting on its own instead
-of going stale. Without one the bar stays hidden even with the setting on. The
-values live in `shell.json` as `birthYear` and `lifeExpectancy`, and the panel
-writes them there itself, so you never have to type them in by hand.
-
-With `mementoMori` unset or false, none of this exists: no bar, and the
-double-tap does nothing.
 
 ## Hacking on it
 
