@@ -1,0 +1,4 @@
+# Local scratch copies — the repo is the history now
+*.bak
+*.bak.*
+*.orig
