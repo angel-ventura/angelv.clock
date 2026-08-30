@@ -260,11 +260,19 @@ Panel {
   property real _lastScrubAt: 0
   property real _scrubVelocity: 0
 
+  // A wheel notch and a track click both arrive as a single `moved` followed
+  // immediately by `released`; a drag arrives as a stream of them. So one
+  // move means the input was discrete, and discrete input always lands on a
+  // detent — there is no such thing as scrolling "slowly" to 10:07. The
+  // velocity rule below then only has to judge real drags.
+  property int _scrubMoves: 0
+
   readonly property real scrubFastThreshold: 0.30   // minutes travelled per ms
 
   function scrubTo(next) {
     var now = Date.now()
     var elapsed = now - root._lastScrubAt
+    root._scrubMoves += 1
 
     if (root._lastScrubAt > 0 && elapsed > 0) {
       var instant = Math.abs(next - root._lastScrubValue) / elapsed
@@ -281,10 +289,12 @@ Panel {
   }
 
   function settleScrub(next) {
-    if (root._scrubVelocity > root.scrubFastThreshold)
+    var discrete = root._scrubMoves <= 1
+    if (discrete || root._scrubVelocity > root.scrubFastThreshold)
       root.shiftMinutes = Model.clampShift(Model.snapShift(root.shiftMinutes, root.homeMinuteOfDay))
     root._scrubVelocity = 0
     root._lastScrubAt = 0
+    root._scrubMoves = 0
   }
 
   function refresh() {
