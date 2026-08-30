@@ -53,6 +53,20 @@ Panel {
   readonly property real yearDone: Model.yearProgress(today.getFullYear(), today.getMonth(), today.getDate())
   readonly property int yearDonePercent: Model.yearProgressPercent(today.getFullYear(), today.getMonth(), today.getDate())
 
+  // Memento mori, opt-in. Upstream hides the life bar behind a double-tap on
+  // the year bar, which means anyone can find it by accident; here the whole
+  // feature — the gesture included — stays inert until "mementoMori": true is
+  // in this widget's shell.json entry. Once it is on, it behaves exactly as
+  // upstream: double-tap the year bar for BORN / LIVE TO, double-tap the life
+  // bar to put it away. Without a birth year the bar stays hidden either way.
+  readonly property bool mementoMori: String(setting("mementoMori", false)) === "true"
+  readonly property int birthYear: mementoMori ? Model.parseBirthYear(setting("birthYear", 0), today.getFullYear()) : 0
+  readonly property int age: Model.ageFromBirthYear(birthYear, today.getFullYear())
+  readonly property int lifeExpectancy: Model.parseLifeExpectancy(setting("lifeExpectancy", 0))
+  readonly property real lifeDone: Model.lifeProgress(age, lifeExpectancy)
+  readonly property int lifeDonePercent: Model.lifeProgressPercent(age, lifeExpectancy)
+  property bool editingLife: false
+
   // Unset falls through to the locale's own first day, so a fresh install
   // starts out matching the rest of the desktop rather than a hardcoded
   // convention. Clicking the grid's "W" heading writes the choice back to
@@ -89,6 +103,9 @@ Panel {
 
   function close() {
     setCenterHoverRevealSuppressed(false)
+    // Dismissing the panel mid-edit would otherwise leave the inputs up,
+    // waiting behind a closed popup for the next time it opens.
+    if (root.editingLife) root.cancelEditingLife()
     root.controller.hide()
   }
 
@@ -345,6 +362,54 @@ Panel {
     persistSettings({ weekStartDay: Model.weekStartSettingName(next) })
   }
 
+  function startEditingLife() {
+    if (!root.mementoMori) return
+    root.editingLife = true
+    Qt.callLater(function() {
+      bornField.text = root.birthYear > 0 ? String(root.birthYear) : ""
+      expectancyField.text = String(root.lifeExpectancy)
+      bornField.selectAll()
+      bornField.forceActiveFocus()
+    })
+  }
+
+  function cancelEditingLife() {
+    root.editingLife = false
+    Qt.callLater(function() { if (keyCatcher) keyCatcher.forceActiveFocus() })
+  }
+
+  // Shared by both fields: Tab hops to the other one, Enter commits the pair,
+  // Escape drops the lot.
+  function handleLifeKey(event, other) {
+    if (event.key === Qt.Key_Escape) {
+      root.cancelEditingLife()
+      event.accepted = true
+    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      root.commitLife()
+      event.accepted = true
+    } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+      other.selectAll()
+      other.forceActiveFocus()
+      event.accepted = true
+    }
+  }
+
+  // Double-tapping the life bar puts it away again. The expectancy stays in
+  // the config so setting a birth year again brings your own number back
+  // rather than the default.
+  function clearLife() {
+    if (root.birthYear <= 0) return
+    persistSettings({ birthYear: 0 })
+  }
+
+  function commitLife() {
+    var born = Model.parseBirthYear(bornField.text, today.getFullYear())
+    var span = Model.parseLifeExpectancy(expectancyField.text)
+    if (born !== root.birthYear || span !== root.lifeExpectancy)
+      persistSettings({ birthYear: born, lifeExpectancy: span })
+    cancelEditingLife()
+  }
+
   function toggleWeekStart() {
     setWeekStart(Model.toggledWeekStart(root.weekStart))
   }
@@ -380,6 +445,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      blocked: root.editingLife
       onMoveRequested: function(dx, dy) {
         if (dx !== 0) root.moveMonth(dx)
         if (dy !== 0) root.moveYear(dy)
@@ -487,8 +553,66 @@ Panel {
               width: gridColumn.width
               height: Math.max(yearLabel.implicitHeight, Style.space(10))
 
+              // Inert unless memento mori is switched on, so nobody stumbles
+              // into a life expectancy prompt by double-tapping the year.
+              TapHandler {
+                enabled: root.mementoMori && !root.editingLife
+                onDoubleTapped: root.startEditingLife()
+              }
+
+              Row {
+                visible: root.editingLife
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(10)
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: "BORN"
+                  color: Qt.darker(root.contentForeground, 1.5)
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.letterSpacing: 1
+                }
+
+                TextField {
+                  id: bornField
+                  width: Style.space(70)
+                  anchors.verticalCenter: parent.verticalCenter
+                  placeholderText: "year"
+                  foreground: root.contentForeground
+                  font.family: root.contentFontFamily
+                  inputMethodHints: Qt.ImhDigitsOnly
+
+                  Keys.onPressed: function(event) { root.handleLifeKey(event, expectancyField) }
+                }
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  leftPadding: Style.space(6)
+                  text: "LIVE TO"
+                  color: Qt.darker(root.contentForeground, 1.5)
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.letterSpacing: 1
+                }
+
+                TextField {
+                  id: expectancyField
+                  width: Style.space(60)
+                  anchors.verticalCenter: parent.verticalCenter
+                  placeholderText: "90"
+                  foreground: root.contentForeground
+                  font.family: root.contentFontFamily
+                  inputMethodHints: Qt.ImhDigitsOnly
+
+                  Keys.onPressed: function(event) { root.handleLifeKey(event, bornField) }
+                }
+              }
+
               Text {
                 id: yearLabel
+                visible: !root.editingLife
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.today.getFullYear()
@@ -500,6 +624,7 @@ Panel {
 
               Text {
                 id: yearPercent
+                visible: !root.editingLife
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.yearDonePercent + "%"
@@ -510,6 +635,7 @@ Panel {
 
               Rectangle {
                 id: yearTrack
+                visible: !root.editingLife
                 anchors.left: yearLabel.right
                 anchors.right: yearPercent.left
                 anchors.leftMargin: Style.space(12)
@@ -526,6 +652,80 @@ Panel {
                   color: Style.selectedStateColor(root.contentForeground, Color.accent)
 
                   Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                }
+              }
+            }
+          }
+
+          // ---- Memento mori. Only here once it has been switched on and a
+          //      birth year given; the same rail as the year above it,
+          //      measured against a nominal lifetime.
+          Item {
+            visible: root.mementoMori && root.birthYear > 0
+            width: parent.width
+            height: visible ? lifeBlock.height : 0
+
+            Item {
+              id: lifeBlock
+              anchors.horizontalCenter: parent.horizontalCenter
+              width: gridColumn.width
+              height: Math.max(lifeLabel.implicitHeight, Style.space(10))
+
+              Text {
+                id: lifeLabel
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: "LIFE"
+                color: Qt.darker(root.contentForeground, 1.5)
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.letterSpacing: 1
+              }
+
+              Text {
+                id: lifePercent
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.lifeDonePercent + "%"
+                color: root.contentForeground
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+
+              Rectangle {
+                anchors.left: lifeLabel.right
+                anchors.right: lifePercent.left
+                anchors.leftMargin: Style.space(12)
+                anchors.rightMargin: Style.space(12)
+                anchors.verticalCenter: parent.verticalCenter
+                height: Style.space(6)
+                radius: Style.cornerRadius > 0 ? height / 2 : 0
+                color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.12)
+
+                Rectangle {
+                  width: Math.round(parent.width * root.lifeDone)
+                  height: parent.height
+                  radius: parent.radius
+                  color: Style.selectedStateColor(root.contentForeground, Color.accent)
+
+                  Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                }
+              }
+
+              TapHandler {
+                onDoubleTapped: root.clearLife()
+              }
+
+              MouseArea {
+                id: lifeMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.NoButton
+
+                PanelToolTip {
+                  visible: lifeMouse.containsMouse
+                  text: "Memento Mori"
+                  fontFamily: root.contentFontFamily
                 }
               }
             }
