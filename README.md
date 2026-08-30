@@ -6,6 +6,10 @@ the calendar popup.
 Based on Omarchy's built-in `omarchy.clock` widget — see
 [Attribution](#attribution).
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="The calendar popup with the zones section open, showing five cities with day/night rails and the scrubber" width="420">
+</p>
+
 ## What it does differently
 
 - **A zones section under the calendar**, collapsed by default. Each row gets a
