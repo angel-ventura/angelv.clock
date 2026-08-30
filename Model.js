@@ -1,3 +1,7 @@
+// Derived from the Omarchy shell's built-in clock widget (omarchy.clock),
+// Copyright (c) David Heinemeier Hansson, MIT licensed.
+// https://github.com/basecamp/omarchy — see LICENSE and NOTICE.
+
 // Pure date and format math for the clock widget and its calendar panel.
 // Everything here is locale- and Qt-free so it can be unit tested under node
 // (test/shell.d/clock-test.sh); the QML owns month/weekday naming through
@@ -248,7 +252,7 @@ function zoneDisplayName(tz) {
 
 // Accepts either shape in shell.json, because one of them is nicer to type
 // and the other is the only one that can carry a name:
-//   "zones": ["Asia/Tokyo", { "tz": "America/New_York", "name": "Miami" }]
+//   "zones": ["Asia/Tokyo", { "tz": "America/New_York", "name": "Atlanta" }]
 function normalizeZoneSetting(value) {
   var source = (value && value.length) ? value : DEFAULT_ZONES
   var list = []

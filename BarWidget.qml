@@ -1,3 +1,7 @@
+// Derived from the Omarchy shell's built-in clock widget (omarchy.clock),
+// Copyright (c) David Heinemeier Hansson, MIT licensed.
+// https://github.com/basecamp/omarchy — see LICENSE and NOTICE.
+
 import QtQuick
 import Quickshell
 import Quickshell.Io

@@ -1,3 +1,7 @@
+// Derived from the Omarchy shell's built-in clock widget (omarchy.clock),
+// Copyright (c) David Heinemeier Hansson, MIT licensed.
+// https://github.com/basecamp/omarchy — see LICENSE and NOTICE.
+
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -119,7 +123,7 @@ Panel {
 
   // Home is discovered, never configured — see Model.probeScript. The one
   // thing the machine cannot know is what you call the place: `timedatectl`
-  // says America/New_York whether you are in Miami or Manhattan, so
+  // says America/New_York whether you are in Atlanta or Manhattan, so
   // "homeName" renames that row and nothing else.
   readonly property string homeNameOverride: String(setting("homeName", "") || "").replace(/^\s+|\s+$/g, "")
 

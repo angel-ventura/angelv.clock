@@ -3,8 +3,8 @@
   "id": "angelv.clock",
   "name": "My Clock",
   "version": "1.0.0",
-  "author": "Omarchy",
-  "description": "Date/time label with a calendar popup",
+  "author": "Angel Ventura",
+  "description": "Date/time label with a calendar popup and a time-zone converter",
   "kinds": [
     "bar-widget"
   ],
@@ -13,11 +13,14 @@
   },
   "barWidget": {
     "displayName": "My Clock",
-    "description": "Date/time label with a calendar popup",
+    "description": "Date/time label with a calendar popup and a time-zone converter",
     "category": "Time",
     "allowMultiple": false
   },
   "omarchy": {
-    "clonedFrom": "omarchy.clock"
-  }
+    "clonedFrom": "omarchy.clock",
+    "basedOn": "Omarchy (https://github.com/basecamp/omarchy), MIT, (c) David Heinemeier Hansson"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/angel-ventura/angelv.clock"
 }

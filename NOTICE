@@ -1,0 +1,28 @@
+angelv.clock
+============
+
+This work is based on Omarchy.
+
+Specifically, it began as a byte-for-byte clone of the Omarchy shell's
+first-party clock bar widget (`omarchy.clock`), created with:
+
+    omarchy plugin clone omarchy.clock
+
+Upstream project : Omarchy — https://github.com/basecamp/omarchy
+Upstream author  : David Heinemeier Hansson / Basecamp
+Upstream license : MIT
+
+The files BarWidget.qml, Model.js and Panel.qml are derived from that
+widget and retain substantial portions of the original code. See LICENSE
+for the full terms and the retained copyright notice.
+
+Changes made in this derivative:
+
+  * Removed the "memento mori" life bar, its BORN / LIVE TO editor, and the
+    associated tooltip (deletions in Panel.qml and Model.js).
+  * Added a time-zone converter section beneath the calendar: per-zone
+    sun/moon glyphs, a 24-hour day/night rail, and a magnetic scrubber.
+
+Omarchy is a trademark and project of its authors. This plugin is an
+independent, unofficial derivative and is not endorsed by or affiliated
+with the Omarchy project or Basecamp.
