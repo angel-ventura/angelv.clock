@@ -7,7 +7,7 @@ Based on Omarchy's built-in `omarchy.clock` widget — see
 [Attribution](#attribution).
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="The calendar popup with the zones section open, showing five cities with day/night rails and the scrubber" width="420">
+  <img src="preview.png" alt="The calendar popup with the zones section open, showing five cities with day/night rails and the scrubber" width="420">
 </p>
 
 ## What it does differently
@@ -36,6 +36,28 @@ you now have two:
 omarchy plugin disable omarchy.clock
 omarchy restart shell
 ```
+
+## Remove
+
+```bash
+omarchy plugin remove angelv.clock
+omarchy restart shell
+```
+
+Removal moves the folder to a hidden timestamped backup beside it rather than
+deleting it, and puts Omarchy's own `omarchy.clock` back in the bar in its
+place. To keep it installed but switch it off instead:
+
+```bash
+omarchy plugin disable angelv.clock
+```
+
+## Requirements
+
+Omarchy 4 (`omarchy-shell`). Zone offsets are read with `date` from GNU
+coreutils and the home zone with `timedatectl` from systemd, both of which are
+already part of a standard Omarchy install. No other external dependencies, and
+nothing is downloaded at runtime.
 
 ## Configure
 
@@ -82,9 +104,9 @@ IANA zones cannot be resolved in QML directly.
 After editing `Panel.qml`, reload with `omarchy restart shell` — a
 `rescanPlugins` is not enough for panel changes.
 
-To turn the widget off, use `omarchy plugin disable angelv.clock`. Avoid
-`omarchy plugin remove`: it renames the folder to a hidden `.bak` and quietly
-puts the stock clock back.
+If you are developing against this rather than using it, prefer
+`omarchy plugin disable angelv.clock` over `omarchy plugin remove` — remove
+moves your working copy to a hidden `.bak` folder and restores the stock clock.
 
 ## Attribution
 
