@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "angelv.clock",
-  "name": "My Clock",
+  "name": "Clock & Zones",
   "version": "1.0.0",
   "author": "Angel Ventura",
   "description": "Date/time label with a calendar popup and a time-zone converter",
@@ -12,7 +12,7 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "My Clock",
+    "displayName": "Clock & Zones",
     "description": "Date/time label with a calendar popup and a time-zone converter",
     "category": "Time",
     "allowMultiple": false

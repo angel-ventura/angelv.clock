@@ -1,7 +1,7 @@
-# angelv.clock
+# Clock & Zones
 
 An Omarchy bar widget: the clock, with a **time-zone converter** folded into
-the calendar popup.
+the calendar popup. Installs as `angelv.clock`.
 
 Based on Omarchy's built-in `omarchy.clock` widget — see
 [Attribution](#attribution).
