@@ -1,7 +1,10 @@
 angelv.clock
 ============
 
-This work is based on Omarchy.
+This work is based on Omarchy. It is a derivative work of the Omarchy
+shell's built-in clock widget (omarchy.clock), used under the MIT License.
+The upstream copyright notice is retained in LICENSE alongside the
+copyright covering the modifications made here.
 
 Specifically, it began as a byte-for-byte clone of the Omarchy shell's
 first-party clock bar widget (`omarchy.clock`), created with:

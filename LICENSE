@@ -1,10 +1,5 @@
 MIT License
 
-This plugin is a derivative work of the Omarchy shell's built-in clock widget
-(omarchy.clock), from https://github.com/basecamp/omarchy, used under the MIT
-License. The original copyright notice is retained below alongside the
-copyright covering the modifications.
-
 Copyright (c) David Heinemeier Hansson
 Copyright (c) 2026 Angel Ventura
 
