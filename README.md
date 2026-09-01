@@ -109,6 +109,7 @@ The zones are configuration, not code. Edit this widget's entry in
 | `syncIntervalMinutes` | Minutes between background pulls. `0` is manual only. Default 15, floor 5 |
 | `notifyUpcomingEvents` | `false` silences reminders. On by default when sync is on |
 | `notifyMinutesBefore` | `"staged"` (10m, 5m, 1m) or a single number of minutes |
+| `hour12` | Agenda times as 12-hour with AM/PM, or 24-hour. Unset follows your locale |
 | `meetingHandler` | `"webapp"` (default) opens Zoom and Meet in their own window; `"browser"` always uses xdg-open |
 
 Notes:

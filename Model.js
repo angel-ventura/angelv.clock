@@ -582,6 +582,29 @@ function formatAgendaMarkdown(events, selectedDateLabel) {
   return lines.join("\n")
 }
 
+// Split a stored "HH:MM" into a display time and its meridiem, so the panel can
+// render "AM"/"PM" smaller and quieter than the digits rather than letting a
+// four-character suffix shout as loudly as the hour.
+//
+// The stored form stays 24-hour — it is data, and it sorts. Only the display
+// changes.
+function formatEventTime(hhmm, hour12) {
+  var raw = String(hhmm || "")
+  var parts = raw.split(":")
+  if (parts.length !== 2) return { time: raw, meridiem: "" }
+
+  var hour = parseInt(parts[0], 10)
+  var minute = parts[1]
+  if (isNaN(hour)) return { time: raw, meridiem: "" }
+
+  if (!hour12) return { time: raw, meridiem: "" }
+
+  var suffix = hour < 12 ? "AM" : "PM"
+  var shown = hour % 12
+  if (shown === 0) shown = 12
+  return { time: shown + ":" + minute, meridiem: suffix }
+}
+
 // Where a join click should actually land.
 //
 // "browser" always uses xdg-open. "webapp" prefers a dedicated window, which
@@ -698,6 +721,7 @@ if (typeof module !== "undefined") {
     formatAgendaMarkdown: formatAgendaMarkdown,
     minutesUntil: minutesUntil,
     notificationStage: notificationStage,
-    meetingLaunchCommand: meetingLaunchCommand
+    meetingLaunchCommand: meetingLaunchCommand,
+    formatEventTime: formatEventTime
   }
 }

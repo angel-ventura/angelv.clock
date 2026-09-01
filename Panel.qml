@@ -432,6 +432,20 @@ Panel {
   // "browser" always uses xdg-open.
   readonly property string meetingHandler: String(setting("meetingHandler", "webapp"))
 
+  // 12- or 24-hour agenda times. Unset follows the locale, so a US install
+  // gets AM/PM and a European one does not, without anyone configuring it.
+  readonly property bool hour12: {
+    var override = setting("hour12", null)
+    if (override !== null && String(override) !== "") return String(override) === "true"
+    // Render an actual afternoon time and look for a meridiem, rather than
+    // trying to read Qt's format string — the rendered output is the thing
+    // that actually matters, and the format tokens vary by backend.
+    // Qt returns "h:mm Ap" for en_US — mixed case, and the tokens differ by
+    // backend — so match against the rendered output rather than the format.
+    var probe = Qt.formatTime(new Date(2000, 0, 1, 13, 0), Qt.locale().timeFormat(Locale.ShortFormat))
+    return /[AaPp]\.?[Mm]/.test(String(probe))
+  }
+
   readonly property bool notifyUpcomingEvents: String(setting("notifyUpcomingEvents", true)) !== "false"
   // "staged" nudges at 10m, 5m and 1m; a bare number fires once at that mark.
   readonly property var notifyMinutesBefore: setting("notifyMinutesBefore", "staged")
@@ -1399,21 +1413,45 @@ Panel {
                       color: eventItem.modelData.color
                     }
 
-                    Text {
+                    // The time column. Digits are right-aligned so the colons
+                    // stack whatever the hour's width, and the meridiem sits
+                    // outside that column, smaller and dimmer — it is the least
+                    // interesting part of "9:30 AM" and should read that way.
+                    // Fixed overall width, so titles line up down the day.
+                    Item {
                       anchors.verticalCenter: parent.verticalCenter
-                      // Fixed width so the titles line up into a column
-                      // whatever mix of timed and all-day events a day holds.
-                      width: Style.space(46)
-                      textFormat: Text.PlainText
-                      text: eventItem.modelData.allDay ? "All day" : eventItem.modelData.startTime
-                      color: Qt.darker(root.contentForeground, 1.4)
-                      font.family: root.contentFontFamily
-                      font.pixelSize: Style.font.bodySmall
+                      readonly property var parts: Model.formatEventTime(eventItem.modelData.startTime, root.hour12)
+                      width: root.hour12 ? Style.space(58) : Style.space(46)
+                      height: timeDigits.implicitHeight
+
+                      Text {
+                        id: timeDigits
+                        anchors.left: parent.left
+                        width: root.hour12 ? Style.space(40) : parent.width
+                        horizontalAlignment: root.hour12 ? Text.AlignRight : Text.AlignLeft
+                        textFormat: Text.PlainText
+                        text: eventItem.modelData.allDay ? "All day" : parent.parts.time
+                        color: Qt.darker(root.contentForeground, 1.4)
+                        font.family: root.contentFontFamily
+                        font.pixelSize: Style.font.bodySmall
+                      }
+
+                      Text {
+                        anchors.left: timeDigits.right
+                        anchors.leftMargin: Style.space(3)
+                        anchors.baseline: timeDigits.baseline
+                        visible: !eventItem.modelData.allDay && parent.parts.meridiem !== ""
+                        textFormat: Text.PlainText
+                        text: parent.parts.meridiem
+                        color: Qt.darker(root.contentForeground, 2.0)
+                        font.family: root.contentFontFamily
+                        font.pixelSize: Style.font.caption
+                      }
                     }
 
                     Text {
                       anchors.verticalCenter: parent.verticalCenter
-                      width: parent.width - Style.space(46) - Style.space(30)
+                      width: parent.width - (root.hour12 ? Style.space(58) : Style.space(46)) - Style.space(30)
                         - (joinButton.visible ? joinButton.width + Style.space(6) : 0)
                       text: eventItem.modelData.title
                       color: root.contentForeground
