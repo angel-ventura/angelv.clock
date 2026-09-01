@@ -21,10 +21,38 @@ for the full terms and the retained copyright notice.
 
 Changes made in this derivative:
 
-  * Removed the "memento mori" life bar, its BORN / LIVE TO editor, and the
-    associated tooltip (deletions in Panel.qml and Model.js).
+  * Made the "memento mori" life bar optional, behind a `mementoMori`
+    setting. It remains on by default, as upstream.
   * Added a time-zone converter section beneath the calendar: per-zone
     sun/moon glyphs, a 24-hour day/night rail, and a magnetic scrubber.
+  * Added read-only calendar sync (see the second derivation below).
+
+
+Second derivation: sync-calendar-omarchy
+----------------------------------------
+
+The calendar sync added in this plugin is derived from sync-calendar-omarchy,
+used under the MIT License.
+
+Upstream project : sync-calendar-omarchy
+                   https://github.com/promaaa/sync-calendar-omarchy
+Upstream author  : promaaa
+Upstream license : MIT
+
+`fetch-events.py` retains substantial portions of that project's
+`fetch-events.py`: the iCalendar reader (line unfolding, text unescaping,
+TZID resolution and datetime parsing), the RRULE expanders for daily,
+weekly, monthly and yearly recurrences, multi-day event expansion, the
+meeting-URL detection, and the feed fetcher.
+
+Removed from that file in this derivative: the Google Calendar API and its
+OAuth helper, all JMAP support, the local offline calendar, every event
+create and delete path, and the machine-translation of event titles. What
+remains is read-only .ics / webcal fetching, which is all that Google's
+"secret address in iCal format" and Apple's published calendar links need.
+
+In Model.js, `parseEventsFile`, `formatSelectedDateLabel` and
+`formatAgendaMarkdown` are adapted from that project's Model.js.
 
 Omarchy is a trademark and project of its authors. This plugin is an
 independent, unofficial derivative and is not endorsed by or affiliated
