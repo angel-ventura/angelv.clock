@@ -260,6 +260,71 @@ Panel {
     onTriggered: if (!zoneProbe.running) zoneProbe.running = true
   }
 
+  // The feed list is the user's own file and is meant to be hand-editable, so
+  // a save from any editor re-syncs without the panel being reopened.
+  FileView {
+    id: configFile
+    path: Quickshell.env("HOME") + "/.config/omarchy/calendars.json"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: root.syncCalendars(true)
+  }
+
+  // Written atomically by fetch-events.py, under a name of this widget's own
+  // so a co-installed calendar plugin cannot clobber it.
+  FileView {
+    id: eventsFile
+    path: Quickshell.env("HOME") + "/.local/state/omarchy/angelv-clock-events.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.loadEvents(eventsFile.text())
+    onFileChanged: {
+      eventsFile.reload()
+      root.loadEvents(eventsFile.text())
+    }
+  }
+
+  Process {
+    id: fetchProc
+    command: ["python3", Qt.resolvedUrl("fetch-events.py").toString().replace(/^file:\/\//, "")]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        root.syncing = false
+        eventsFile.reload()
+        root.loadEvents(eventsFile.text())
+        root.checkUpcomingNotifications()
+      }
+    }
+  }
+
+  Process { id: notifyProc }
+  Process { id: openUrlProc }
+  Process { id: copyProc }
+
+  Timer {
+    id: agendaCopiedTimer
+    interval: 2000
+    onTriggered: root.agendaCopied = false
+  }
+
+  // Runs whether or not the popup is open — a reminder that only fired while
+  // you were already looking at the calendar would be pointless.
+  Timer {
+    interval: Math.max(300000, root.syncIntervalMinutes * 60000)
+    repeat: true
+    running: root.calendarSync && root.syncIntervalMinutes > 0
+    onTriggered: root.syncCalendars(false)
+  }
+
+  // 30s rather than a minute, so a stage is never stepped straight over.
+  Timer {
+    interval: 30000
+    repeat: true
+    running: root.calendarSync && root.notifyUpcomingEvents
+    onTriggered: root.checkUpcomingNotifications()
+  }
+
   function toggleZones() {
     root.zonesExpanded = !root.zonesExpanded
     if (root.zonesExpanded && !zoneProbe.running) zoneProbe.running = true
@@ -313,6 +378,150 @@ Panel {
     root._scrubMoves = 0
   }
 
+  // ---- Calendar feeds.
+  //
+  // Google's "secret address in iCal format" and Apple's published webcal://
+  // link are both plain one-way .ics feeds, so this whole path is read-only:
+  // fetch-events.py pulls them, expands the recurrence rules and writes a flat
+  // day-keyed file that the FileView below watches. Nothing here talks to a
+  // calendar API, and nothing here can write an event back.
+  //
+  // The feed list lives in ~/.config/omarchy/calendars.json rather than in
+  // this widget's shell.json entry: a private iCal URL is a bearer credential
+  // in disguise, and shell.json is the file people paste into forums.
+
+  // Sync is opt-in. With no calendars.json the python is never spawned, so a
+  // clock that is only ever a clock stays exactly as cheap as it was.
+  readonly property bool calendarSync: String(setting("calendarSync", false)) === "true"
+
+  // Minutes between background pulls. 0 means manual only. Google caches its
+  // .ics feed on their side for a while regardless, so anything under about
+  // five minutes buys nothing but wakeups.
+  readonly property int syncIntervalMinutes: {
+    var raw = parseInt(setting("syncIntervalMinutes", 15), 10)
+    if (isNaN(raw) || raw < 0) return 15
+    return raw === 0 ? 0 : Math.max(5, raw)
+  }
+
+  // "webapp" opens Zoom and Meet in their own windows where Omarchy has an
+  // app for them, and falls back to the browser for everything else.
+  // "browser" always uses xdg-open.
+  readonly property string meetingHandler: String(setting("meetingHandler", "webapp"))
+
+  readonly property bool notifyUpcomingEvents: String(setting("notifyUpcomingEvents", true)) !== "false"
+  // "staged" nudges at 10m, 5m and 1m; a bare number fires once at that mark.
+  readonly property var notifyMinutesBefore: setting("notifyMinutesBefore", "staged")
+
+  property var eventsByDate: ({})
+  property var calendarStatuses: []
+  property string lastSyncedLabel: ""
+  property int totalEvents: 0
+  property bool syncing: false
+
+  // Which calendars the filter chips have switched off, by name. Kept as a
+  // set of hidden names rather than shown ones so a newly added feed appears
+  // without having to be opted in.
+  property var hiddenCalendars: ({})
+
+  // The day the agenda is showing. Empty means today — and it is reset on
+  // every open, so the panel always comes up on today rather than on whatever
+  // was last clicked.
+  property string selectedDateKey: ""
+  readonly property string agendaDateKey: selectedDateKey || todayKey
+  readonly property string agendaDateLabel: Model.formatSelectedDateLabel(agendaDateKey, todayKey, Qt.locale())
+
+  readonly property var agendaEvents: Model.filterEvents(root.eventsByDate[root.agendaDateKey] || [], root.hiddenCalendars)
+
+  property bool agendaCopied: false
+
+  function eventsOn(dateKeyStr) {
+    return Model.filterEvents(root.eventsByDate[dateKeyStr] || [], root.hiddenCalendars)
+  }
+
+  function selectDate(dateKeyStr) {
+    root.selectedDateKey = (root.selectedDateKey === dateKeyStr) ? "" : dateKeyStr
+  }
+
+  function toggleCalendar(name) {
+    var next = {}
+    for (var k in root.hiddenCalendars) next[k] = root.hiddenCalendars[k]
+    if (next[name]) delete next[name]
+    else next[name] = true
+    root.hiddenCalendars = next
+  }
+
+  // Throttled, because the config file watcher, the open, the timer and the
+  // sync button can all land within a second of each other.
+  property real lastSyncAt: 0
+
+  function syncCalendars(force) {
+    if (!root.calendarSync) return
+    var now = Date.now()
+    if (!force && (now - root.lastSyncAt < 30000)) return
+    if (fetchProc.running) return
+    root.lastSyncAt = now
+    root.syncing = true
+    fetchProc.running = true
+  }
+
+  function loadEvents(text) {
+    var parsed = Model.parseEventsFile(text)
+    root.eventsByDate = parsed.eventsByDate
+    root.calendarStatuses = parsed.calendars
+    root.lastSyncedLabel = parsed.lastSyncedFormatted
+    root.totalEvents = parsed.totalEvents
+  }
+
+  function copyAgenda() {
+    var md = Model.formatAgendaMarkdown(root.agendaEvents, root.agendaDateLabel)
+    if (!md) return
+    // wl-copy over a clipboard QML API because the panel is a layer surface
+    // and does not hold a seat's selection focus.
+    copyProc.command = ["wl-copy", "--", md]
+    copyProc.running = true
+    root.agendaCopied = true
+    agendaCopiedTimer.restart()
+  }
+
+  function openMeeting(url) {
+    // Every element is its own argv entry, never interpolated into a shell
+    // string: the URL comes off the network inside a calendar description.
+    var command = Model.meetingLaunchCommand(url, root.meetingHandler)
+    if (!command) return
+    openUrlProc.command = command
+    openUrlProc.running = true
+    root.close()
+  }
+
+  // ---- Reminders.
+  //
+  // Fires from a timer rather than off the sync, so a meeting still nudges on
+  // a manual-sync setup. `notified` is keyed by event id plus stage, which is
+  // what lets a staged reminder ring three times without ringing twice.
+  property var notified: ({})
+
+  function checkUpcomingNotifications() {
+    if (!root.calendarSync || !root.notifyUpcomingEvents) return
+    var now = new Date()
+    var todaysEvents = root.eventsByDate[Model.keyForDate(now)] || []
+    for (var i = 0; i < todaysEvents.length; i++) {
+      var evt = todaysEvents[i]
+      if (!evt || evt.allDay) continue
+      var stage = Model.notificationStage(Model.minutesUntil(evt.startIso, now), root.notifyMinutesBefore)
+      if (!stage) continue
+      var mark = String(evt.id) + ":" + stage
+      if (root.notified[mark]) continue
+      root.notified[mark] = true
+      var when = stage === "t1" ? "in 1 minute" : ("in " + stage.substring(1) + " minutes")
+      var body = evt.startTime + "  ·  " + when + (evt.location ? "\n" + evt.location : "")
+      // "--" matters: an event title starting with a dash would otherwise be
+      // parsed as a notify-send flag, and titles come off the network.
+      notifyProc.command = ["notify-send", "-a", "Clock & Zones", "-i", "x-office-calendar",
+                            "--", String(evt.title || "Upcoming event"), body]
+      notifyProc.running = true
+    }
+  }
+
   function refresh() {
     root.today = new Date()
     root.goToToday()
@@ -321,6 +530,11 @@ Panel {
     root.zonesExpanded = false
     root.shiftMinutes = 0
     if (!zoneProbe.running) zoneProbe.running = true
+    // Same reasoning as the zones collapse: a day selected last time is not
+    // what this open is about.
+    root.selectedDateKey = ""
+    root.agendaCopied = false
+    root.syncCalendars(false)
   }
 
   function goToToday() {
@@ -459,6 +673,7 @@ Panel {
         else if (t === "}") root.moveYear(1)
         else if (t === "t" || t === "T") root.goToToday()
         else if (t === "w" || t === "W") root.toggleWeekStart()
+        else if (t === "y" || t === "Y") root.copyAgenda()
       }
 
       Flickable {
@@ -848,19 +1063,32 @@ Panel {
                     model: modelData.days
 
                     Rectangle {
+                      id: dayCell
                       required property var modelData
+
+                      // Empty whenever sync is off, which is what keeps the
+                      // grid the plain read-out it was built as.
+                      readonly property var dayEvents: root.calendarSync ? root.eventsOn(modelData.key) : []
+                      readonly property bool selected: root.calendarSync && root.selectedDateKey === modelData.key
 
                       width: root.cellWidth
                       height: root.cellHeight
                       radius: Style.cornerRadius
                       // Today is outlined, not filled: a lit-up block shouts
-                      // over a grid this quiet.
-                      color: "transparent"
+                      // over a grid this quiet. A picked day is the one thing
+                      // allowed a fill, and only a faint one, so that the two
+                      // marks can sit on the same cell without fighting.
+                      color: dayCell.selected ? Style.hoverFillFor(root.contentForeground, Color.accent) : "transparent"
                       border.width: modelData.today ? Style.spacing.hairline : 0
                       border.color: Style.normalBorderFor(root.contentForeground, Color.accent)
 
                       Text {
-                        anchors.centerIn: parent
+                        id: dayNumber
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        // Nudged up off centre only when there are dots to
+                        // make room for, so an empty month is unchanged.
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.verticalCenterOffset: dayCell.dayEvents.length > 0 ? -Style.space(3) : 0
                         text: modelData.day
                         color: modelData.inMonth
                           ? (modelData.weekend ? Qt.darker(root.contentForeground, 1.45) : root.contentForeground)
@@ -868,6 +1096,38 @@ Panel {
                         font.family: root.contentFontFamily
                         font.pixelSize: Style.font.body
                         font.bold: modelData.today
+                      }
+
+                      // One dot per calendar with something on that day, in
+                      // that calendar's own colour, capped at three.
+                      Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: dayNumber.bottom
+                        anchors.topMargin: Style.space(1)
+                        spacing: Style.space(2)
+                        visible: dayCell.dayEvents.length > 0
+
+                        Repeater {
+                          model: Model.dayDotColors(dayCell.dayEvents)
+
+                          Rectangle {
+                            required property var modelData
+                            width: Style.space(4)
+                            height: Style.space(4)
+                            radius: width / 2
+                            color: modelData
+                            // Days either side of the month read as context,
+                            // not as content, and their dots should too.
+                            opacity: dayCell.modelData.inMonth ? 0.95 : 0.4
+                          }
+                        }
+                      }
+
+                      MouseArea {
+                        anchors.fill: parent
+                        enabled: root.calendarSync
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.selectDate(dayCell.modelData.key)
                       }
                     }
                   }
@@ -940,6 +1200,228 @@ Panel {
                 foreground: root.contentForeground
                 fontFamily: root.contentFontFamily
                 onClicked: root.moveMonth(1)
+              }
+            }
+          }
+
+          // ---- Agenda for the selected day, or for today until a day is
+          //      clicked. The whole section is absent unless sync is on, so
+          //      the popup keeps its original height for anyone using this
+          //      as a plain clock.
+          Item {
+            width: parent.width
+            height: root.calendarSync ? agendaColumn.y + agendaColumn.height : 0
+            visible: root.calendarSync
+
+            Column {
+              id: agendaColumn
+              y: Style.space(10)
+              anchors.horizontalCenter: parent.horizontalCenter
+              width: gridColumn.width
+              spacing: Style.space(2)
+
+              PanelSeparator {
+                width: parent.width
+                foreground: root.contentForeground
+              }
+
+              // Header: which day on the left, the two actions on the right.
+              Item {
+                width: parent.width
+                height: Math.max(agendaHeader.implicitHeight, Style.space(20))
+
+                PanelSectionHeader {
+                  id: agendaHeader
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.agendaDateLabel
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                }
+
+                Row {
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(2)
+
+                  PanelActionButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    iconText: root.agendaCopied ? "󰄬" : "󰆏"
+                    tooltipText: root.agendaEvents.length > 0
+                      ? (root.agendaCopied ? "Copied" : "Copy agenda as Markdown (y)")
+                      : "Nothing to copy"
+                    foreground: root.agendaCopied ? Color.accent : root.contentForeground
+                    fontFamily: root.contentFontFamily
+                    enabled: root.agendaEvents.length > 0
+                    opacity: root.agendaEvents.length > 0 ? 1.0 : 0.4
+                    onClicked: root.copyAgenda()
+                  }
+
+                  PanelActionButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    iconText: "󰑐"
+                    tooltipText: root.syncing
+                      ? "Syncing…"
+                      : ("Sync now" + (root.lastSyncedLabel ? " (last " + root.lastSyncedLabel + ")" : ""))
+                    foreground: root.contentForeground
+                    fontFamily: root.contentFontFamily
+                    enabled: !root.syncing
+                    opacity: root.syncing ? 0.5 : 1.0
+                    onClicked: root.syncCalendars(true)
+                  }
+                }
+              }
+
+              // Filter chips. Only earn their row once there is more than one
+              // feed to tell apart.
+              Flow {
+                width: parent.width
+                spacing: Style.space(3)
+                visible: root.calendarStatuses.length > 1
+
+                Repeater {
+                  model: root.calendarStatuses
+
+                  Rectangle {
+                    id: chip
+                    required property var modelData
+                    readonly property bool on: !root.hiddenCalendars[chip.modelData.name]
+
+                    height: Style.space(16)
+                    width: chipLabel.implicitWidth + Style.space(22)
+                    radius: height / 2
+                    color: chip.on ? Style.hoverFillFor(root.contentForeground, chip.modelData.color) : "transparent"
+                    border.width: Style.spacing.hairline
+                    border.color: chip.on ? chip.modelData.color : Qt.darker(root.contentForeground, 2.2)
+
+                    Row {
+                      anchors.centerIn: parent
+                      spacing: Style.space(3)
+
+                      Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Style.space(5)
+                        height: Style.space(5)
+                        radius: width / 2
+                        color: chip.modelData.color
+                        opacity: chip.on ? 1.0 : 0.35
+                      }
+
+                      Text {
+                        id: chipLabel
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: chip.modelData.name
+                        color: chip.on ? root.contentForeground : Qt.darker(root.contentForeground, 1.9)
+                        font.family: root.contentFontFamily
+                        font.pixelSize: Style.font.caption
+                        textFormat: Text.PlainText
+                      }
+                    }
+
+                    MouseArea {
+                      anchors.fill: parent
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: root.toggleCalendar(chip.modelData.name)
+                    }
+                  }
+                }
+              }
+
+              // The day itself. A feed that failed says so here rather than
+              // silently reading as an empty day.
+              Text {
+                width: parent.width
+                visible: root.agendaEvents.length === 0
+                // AutoText would sniff a calendar name for markup.
+                textFormat: Text.PlainText
+                text: {
+                  if (root.calendarStatuses.length === 0) return "No calendars configured"
+                  for (var i = 0; i < root.calendarStatuses.length; i++) {
+                    var st = String(root.calendarStatuses[i].status || "")
+                    if (st.indexOf("error") === 0)
+                      return root.calendarStatuses[i].name + " failed to sync"
+                  }
+                  return "Nothing scheduled"
+                }
+                color: Qt.darker(root.contentForeground, 1.7)
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.bodySmall
+                topPadding: Style.space(4)
+                bottomPadding: Style.space(4)
+              }
+
+              Repeater {
+                model: root.agendaEvents
+
+                Item {
+                  id: eventItem
+                  required property var modelData
+                  width: agendaColumn.width
+                  height: Math.max(eventRow.implicitHeight, Style.space(20))
+
+                  Row {
+                    id: eventRow
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width
+                    spacing: Style.space(6)
+
+                    // The calendar's colour as a rule down the left, which
+                    // survives a long title better than a dot would.
+                    Rectangle {
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: Style.spacing.hairline * 2
+                      height: Style.space(14)
+                      radius: width / 2
+                      color: eventItem.modelData.color
+                    }
+
+                    Text {
+                      anchors.verticalCenter: parent.verticalCenter
+                      // Fixed width so the titles line up into a column
+                      // whatever mix of timed and all-day events a day holds.
+                      width: Style.space(46)
+                      textFormat: Text.PlainText
+                      text: eventItem.modelData.allDay ? "All day" : eventItem.modelData.startTime
+                      color: Qt.darker(root.contentForeground, 1.4)
+                      font.family: root.contentFontFamily
+                      font.pixelSize: Style.font.bodySmall
+                    }
+
+                    Text {
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: parent.width - Style.space(46) - Style.space(30)
+                        - (joinButton.visible ? joinButton.width + Style.space(6) : 0)
+                      text: eventItem.modelData.title
+                      color: root.contentForeground
+                      font.family: root.contentFontFamily
+                      font.pixelSize: Style.font.bodySmall
+                      elide: Text.ElideRight
+                      // The title arrives off the network; rendering it as
+                      // rich text would let a calendar entry inject markup.
+                      textFormat: Text.PlainText
+                    }
+
+                    PanelActionButton {
+                      id: joinButton
+                      anchors.verticalCenter: parent.verticalCenter
+                      visible: String(eventItem.modelData.meetingUrl || "") !== ""
+                      iconText: "󰕧"
+                      // The provider patterns match known domains, but a bare URL
+                      // in an event's LOCATION also earns a button — and that
+                      // event can come from anyone who can send an invite. Show
+                      // the host so the click is never a blind one.
+                      tooltipText: {
+                        var host = String(eventItem.modelData.meetingUrl || "").replace(/^https?:\/\//, "").split("/")[0]
+                        var provider = eventItem.modelData.meetingProvider || "meeting"
+                        return host ? ("Join " + provider + "  ·  " + host) : ("Join " + provider)
+                      }
+                      foreground: root.contentForeground
+                      hoverColor: Color.accent
+                      fontFamily: root.contentFontFamily
+                      onClicked: root.openMeeting(eventItem.modelData.meetingUrl)
+                    }
+                  }
+                }
               }
             }
           }

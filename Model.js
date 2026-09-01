@@ -471,6 +471,182 @@ function isDaylight(clock) {
   return clock.hour >= 6 && clock.hour < 20
 }
 
+// ---- Calendar feeds.
+//
+// fetch-events.py does the fetching and the RRULE expansion; by the time a
+// day reaches here it is already a flat, sorted list. These are only the
+// readers for that file and the formatters the panel needs.
+//
+// The iCalendar reader is derived from sync-calendar-omarchy by promaaa (MIT)
+// — see NOTICE.
+
+// A missing or half-written state file reads as "no events" rather than
+// throwing: fetch-events.py writes it atomically, but it simply does not
+// exist until the first sync completes.
+function parseEventsFile(text) {
+  var empty = { eventsByDate: {}, calendars: [], lastSyncedFormatted: "", totalEvents: 0, configuredCount: 0 }
+  if (!text || typeof text !== "string") return empty
+  try {
+    var data = JSON.parse(text)
+    return {
+      eventsByDate: data.eventsByDate || {},
+      calendars: data.calendars || [],
+      lastSyncedFormatted: data.lastSyncedFormatted || "",
+      totalEvents: data.totalEvents || 0,
+      configuredCount: data.configuredCount !== undefined
+        ? data.configuredCount
+        : (data.calendars ? data.calendars.length : 0)
+    }
+  } catch (e) {
+    return empty
+  }
+}
+
+// calendars.json is the user's own file and may be edited by hand, so a
+// syntax error mid-edit has to leave the panel standing.
+function parseCalendarsConfig(text) {
+  if (!text || typeof text !== "string") return []
+  try {
+    var data = JSON.parse(text)
+    return Array.isArray(data) ? data : []
+  } catch (e) {
+    return []
+  }
+}
+
+// The dots under a day cell. Capped, because a day with eleven events should
+// read as "busy", not as a second row of pixels — and the count is what the
+// agenda below is for.
+var MAX_DAY_DOTS = 3
+
+function dayDotColors(events, maxDots) {
+  var cap = maxDots || MAX_DAY_DOTS
+  var seen = {}
+  var colors = []
+  for (var i = 0; i < events.length && colors.length < cap; i++) {
+    var c = events[i] && events[i].color
+    if (!c || seen[c]) continue
+    seen[c] = true
+    colors.push(c)
+  }
+  return colors
+}
+
+// Only the calendars actually switched on in the filter chips. An empty or
+// missing filter set means "all of them" rather than "none".
+function filterEvents(events, hidden) {
+  if (!events || !events.length) return []
+  if (!hidden) return events
+  var out = []
+  for (var i = 0; i < events.length; i++) {
+    if (!hidden[events[i].calendar]) out.push(events[i])
+  }
+  return out
+}
+
+function formatSelectedDateLabel(dateKeyStr, todayKeyStr, locale) {
+  if (!dateKeyStr) return "TODAY"
+  if (dateKeyStr === todayKeyStr) return "TODAY"
+  var parts = dateKeyStr.split("-")
+  if (parts.length !== 3) return dateKeyStr
+  var y = parseInt(parts[0], 10)
+  var m = parseInt(parts[1], 10) - 1
+  var d = parseInt(parts[2], 10)
+  var dt = new Date(y, m, d)
+  var dayName = (locale && typeof locale.dayName === "function")
+    ? locale.dayName(dt.getDay(), 1)
+    : WEEKDAY_NAMES[dt.getDay()]
+  var monthName = (locale && typeof locale.monthName === "function")
+    ? locale.monthName(dt.getMonth(), 1)
+    : ("" + (m + 1))
+  return (dayName + ", " + monthName + " " + d).toUpperCase()
+}
+
+// Markdown checkboxes, because the destination is a standup note or an
+// Obsidian daily page rather than a document.
+function formatAgendaMarkdown(events, selectedDateLabel) {
+  if (!events || events.length === 0) return ""
+  var lines = ["### Agenda \u2013 " + (selectedDateLabel || "Today")]
+  for (var i = 0; i < events.length; i++) {
+    var evt = events[i]
+    if (!evt) continue
+    var timeStr = evt.allDay ? "All Day" : (evt.startTime + (evt.endTime ? " \u2013 " + evt.endTime : ""))
+    var line = "- [ ] " + timeStr + " \u00b7 " + (evt.title || "Untitled Event")
+    if (evt.meetingProvider && evt.meetingUrl) {
+      line += " ([" + evt.meetingProvider + "](" + evt.meetingUrl + "))"
+    } else if (evt.location) {
+      line += " (" + evt.location + ")"
+    }
+    lines.push(line)
+  }
+  return lines.join("\n")
+}
+
+// Where a join click should actually land.
+//
+// "browser" always uses xdg-open. "webapp" prefers a dedicated window, which
+// matters for a call: camera and microphone permission is per-origin and
+// sticks, and a real window can carry a Hyprland rule where a browser tab
+// cannot.
+//
+// Zoom is handed its own deep link rather than a rebuilt web-client URL —
+// Omarchy already owns that rewrite in omarchy-webapp-handler-zoom, and
+// routing through the scheme means a natively installed Zoom would claim it
+// instead, which is the better client anyway.
+//
+// Anything with no app of its own falls through to the browser.
+function meetingLaunchCommand(url, handler) {
+  var link = String(url || "")
+  if (!link) return null
+
+  var plain = ["xdg-open", link]
+  if (String(handler || "webapp") === "browser") return plain
+
+  var zoom = link.match(/^https?:\/\/(?:[a-zA-Z0-9-]+\.)?zoom\.us\/(?:j|w|wc\/join)\/(\d+)/)
+  if (zoom) {
+    var deep = "zoommtg://zoom.us/join?confno=" + zoom[1]
+    // Only a well-formed passcode travels; it is going into a URL built here.
+    var pwd = link.match(/[?&]pwd=([a-zA-Z0-9._-]+)/)
+    if (pwd) deep += "&pwd=" + pwd[1]
+    return ["xdg-open", deep]
+  }
+
+  // Meet has no scheme to hand off to, so the web app is launched directly.
+  if (/^https:\/\/meet\.google\.com\//.test(link))
+    return ["omarchy-launch-webapp", link]
+
+  return plain
+}
+
+// Minutes from now until an ISO start stamp, negative once it has begun.
+function minutesUntil(startIso, now) {
+  if (!startIso) return NaN
+  var start = new Date(startIso)
+  if (isNaN(start.getTime())) return NaN
+  return Math.floor((start.getTime() - (now || new Date()).getTime()) / 60000)
+}
+
+// Which reminder, if any, is due for an event this many minutes out.
+// "staged" fires three times on the way in; a bare number fires once. The
+// returned string is also the dedupe key, so an event notified at 10m still
+// gets its 5m and 1m nudges but never the same one twice.
+var STAGED_NOTICES = [10, 5, 1]
+
+function notificationStage(diffMin, noticeSetting) {
+  if (isNaN(diffMin) || diffMin < 0) return ""
+  var setting = String(noticeSetting === undefined || noticeSetting === null ? "staged" : noticeSetting).toLowerCase()
+  if (setting === "staged") {
+    for (var i = 0; i < STAGED_NOTICES.length; i++) {
+      if (diffMin === STAGED_NOTICES[i]) return "t" + STAGED_NOTICES[i]
+    }
+    return ""
+  }
+  var mins = parseInt(setting, 10)
+  if (isNaN(mins) || mins <= 0) return ""
+  return diffMin === mins ? "t" + mins : ""
+}
+
+
 if (typeof module !== "undefined") {
   module.exports = {
     ZONE_DETENT: ZONE_DETENT,
@@ -513,6 +689,15 @@ if (typeof module !== "undefined") {
     clockFormats: clockFormats,
     clockFormatRing: clockFormatRing,
     nextClockFormat: nextClockFormat,
-    isoWeekLiteral: isoWeekLiteral
+    isoWeekLiteral: isoWeekLiteral,
+    parseEventsFile: parseEventsFile,
+    parseCalendarsConfig: parseCalendarsConfig,
+    dayDotColors: dayDotColors,
+    filterEvents: filterEvents,
+    formatSelectedDateLabel: formatSelectedDateLabel,
+    formatAgendaMarkdown: formatAgendaMarkdown,
+    minutesUntil: minutesUntil,
+    notificationStage: notificationStage,
+    meetingLaunchCommand: meetingLaunchCommand
   }
 }
