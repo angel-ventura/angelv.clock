@@ -8,7 +8,7 @@ Based on Omarchy's built-in `omarchy.clock` widget — see
 [Attribution](#attribution).
 
 <p align="center">
-  <img src="preview.png" alt="The calendar popup with the zones section open, showing five cities with day/night rails and the scrubber" width="420">
+  <img src="preview.png" alt="The calendar popup: a month grid with event dots, calendar filter chips, a day agenda with Meet and Zoom join buttons, and the zones section open below showing five cities with day/night rails and the scrubber" width="420">
 </p>
 
 ## What it does differently
