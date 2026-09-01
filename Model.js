@@ -582,6 +582,42 @@ function formatAgendaMarkdown(events, selectedDateLabel) {
   return lines.join("\n")
 }
 
+// Where a join click should actually land.
+//
+// "browser" always uses xdg-open. "webapp" prefers a dedicated window, which
+// matters for a call: camera and microphone permission is per-origin and
+// sticks, and a real window can carry a Hyprland rule where a browser tab
+// cannot.
+//
+// Zoom is handed its own deep link rather than a rebuilt web-client URL —
+// Omarchy already owns that rewrite in omarchy-webapp-handler-zoom, and
+// routing through the scheme means a natively installed Zoom would claim it
+// instead, which is the better client anyway.
+//
+// Anything with no app of its own falls through to the browser.
+function meetingLaunchCommand(url, handler) {
+  var link = String(url || "")
+  if (!link) return null
+
+  var plain = ["xdg-open", link]
+  if (String(handler || "webapp") === "browser") return plain
+
+  var zoom = link.match(/^https?:\/\/(?:[a-zA-Z0-9-]+\.)?zoom\.us\/(?:j|w|wc\/join)\/(\d+)/)
+  if (zoom) {
+    var deep = "zoommtg://zoom.us/join?confno=" + zoom[1]
+    // Only a well-formed passcode travels; it is going into a URL built here.
+    var pwd = link.match(/[?&]pwd=([a-zA-Z0-9._-]+)/)
+    if (pwd) deep += "&pwd=" + pwd[1]
+    return ["xdg-open", deep]
+  }
+
+  // Meet has no scheme to hand off to, so the web app is launched directly.
+  if (/^https:\/\/meet\.google\.com\//.test(link))
+    return ["omarchy-launch-webapp", link]
+
+  return plain
+}
+
 // Minutes from now until an ISO start stamp, negative once it has begun.
 function minutesUntil(startIso, now) {
   if (!startIso) return NaN
@@ -661,6 +697,7 @@ if (typeof module !== "undefined") {
     formatSelectedDateLabel: formatSelectedDateLabel,
     formatAgendaMarkdown: formatAgendaMarkdown,
     minutesUntil: minutesUntil,
-    notificationStage: notificationStage
+    notificationStage: notificationStage,
+    meetingLaunchCommand: meetingLaunchCommand
   }
 }

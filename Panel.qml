@@ -403,6 +403,11 @@ Panel {
     return raw === 0 ? 0 : Math.max(5, raw)
   }
 
+  // "webapp" opens Zoom and Meet in their own windows where Omarchy has an
+  // app for them, and falls back to the browser for everything else.
+  // "browser" always uses xdg-open.
+  readonly property string meetingHandler: String(setting("meetingHandler", "webapp"))
+
   readonly property bool notifyUpcomingEvents: String(setting("notifyUpcomingEvents", true)) !== "false"
   // "staged" nudges at 10m, 5m and 1m; a bare number fires once at that mark.
   readonly property var notifyMinutesBefore: setting("notifyMinutesBefore", "staged")
@@ -479,10 +484,11 @@ Panel {
   }
 
   function openMeeting(url) {
-    if (!url) return
-    // Passed as its own argv element, never interpolated into a shell string:
-    // the URL comes off the network inside a calendar description.
-    openUrlProc.command = ["xdg-open", String(url)]
+    // Every element is its own argv entry, never interpolated into a shell
+    // string: the URL comes off the network inside a calendar description.
+    var command = Model.meetingLaunchCommand(url, root.meetingHandler)
+    if (!command) return
+    openUrlProc.command = command
     openUrlProc.running = true
     root.close()
   }

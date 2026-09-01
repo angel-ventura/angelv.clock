@@ -101,6 +101,7 @@ The zones are configuration, not code. Edit this widget's entry in
 | `syncIntervalMinutes` | Minutes between background pulls. `0` is manual only. Default 15, floor 5 |
 | `notifyUpcomingEvents` | `false` silences reminders. On by default when sync is on |
 | `notifyMinutesBefore` | `"staged"` (10m, 5m, 1m) or a single number of minutes |
+| `meetingHandler` | `"webapp"` (default) opens Zoom and Meet in their own window; `"browser"` always uses xdg-open |
 
 Notes:
 
@@ -163,10 +164,31 @@ stacking — run one or the other.
 | Chips | Filter by calendar |
 | `󰆏` or `y` | Copy the day's agenda as Markdown checkboxes |
 | `󰑐` | Sync now |
-| `󰕧` | Open a detected Meet / Zoom / Teams / Webex / Jitsi link |
+| `󰕧` | Join a detected Meet / Zoom / Teams / Webex / Jitsi link. The tooltip names the host it will open |
 
 Reminders fire whether or not the popup is open: `"staged"` nudges at 10, 5 and
 1 minutes before an event, and a number fires once at that mark.
+
+### Where a join click lands
+
+By default (`"meetingHandler": "webapp"`) a call opens in its own window rather
+than a browser tab. Camera and microphone permission is per-origin and sticks,
+and a real window can carry a Hyprland rule — a browser tab cannot.
+
+| Provider | Opens |
+| --- | --- |
+| Zoom | `zoommtg://`, which Omarchy's own handler turns into the web client. A natively installed Zoom claims that scheme first, which is better still |
+| Google Meet | The Meet web app, via `omarchy-launch-webapp` |
+| Teams, Webex, Jitsi, anything else | Your default browser |
+
+Zoom ships with Omarchy. For Meet, create the web app once:
+
+```bash
+omarchy-webapp-install "Google Meet" "https://meet.google.com/" \
+  "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/google-meet.png"
+```
+
+Set `"meetingHandler": "browser"` to send everything to the browser instead.
 
 ## Hacking on it
 
