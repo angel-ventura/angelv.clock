@@ -201,10 +201,14 @@ stacking — run one or the other.
 | In the panel | |
 | --- | --- |
 | Click a day | Show that day's agenda; click again to go back to today |
-| Chips | Filter by calendar |
-| `󰆏` or `y` | Copy the day's agenda as Markdown checkboxes |
-| `󰑐` | Sync now |
-| `󰕧` | Join a detected Meet / Zoom / Teams / Webex / Jitsi link. The tooltip names the host it will open |
+| Calendar chips | Filter by calendar |
+| Copy button, or `y` | Copy the day's agenda as Markdown checkboxes |
+| Refresh button | Sync now. Its tooltip shows when it last synced |
+| Camera button on an event | Join a detected Meet / Zoom / Teams / Webex / Jitsi link. The tooltip names the host it will open |
+
+The three buttons sit in the agenda header and on each event row; hover any of
+them for a tooltip. (They are drawn with Nerd Font icons, which is why they are
+described in words here rather than shown.)
 
 ### Reminders
 
