@@ -508,8 +508,10 @@ Panel {
       root.notified[mark] = true
       var when = stage === "t1" ? "in 1 minute" : ("in " + stage.substring(1) + " minutes")
       var body = evt.startTime + "  ·  " + when + (evt.location ? "\n" + evt.location : "")
+      // "--" matters: an event title starting with a dash would otherwise be
+      // parsed as a notify-send flag, and titles come off the network.
       notifyProc.command = ["notify-send", "-a", "Clock & Zones", "-i", "x-office-calendar",
-                            String(evt.title || "Upcoming event"), body]
+                            "--", String(evt.title || "Upcoming event"), body]
       notifyProc.running = true
     }
   }
@@ -1324,6 +1326,8 @@ Panel {
               Text {
                 width: parent.width
                 visible: root.agendaEvents.length === 0
+                // AutoText would sniff a calendar name for markup.
+                textFormat: Text.PlainText
                 text: {
                   if (root.calendarStatuses.length === 0) return "No calendars configured"
                   for (var i = 0; i < root.calendarStatuses.length; i++) {
@@ -1370,6 +1374,7 @@ Panel {
                       // Fixed width so the titles line up into a column
                       // whatever mix of timed and all-day events a day holds.
                       width: Style.space(46)
+                      textFormat: Text.PlainText
                       text: eventItem.modelData.allDay ? "All day" : eventItem.modelData.startTime
                       color: Qt.darker(root.contentForeground, 1.4)
                       font.family: root.contentFontFamily
@@ -1395,7 +1400,15 @@ Panel {
                       anchors.verticalCenter: parent.verticalCenter
                       visible: String(eventItem.modelData.meetingUrl || "") !== ""
                       iconText: "󰕧"
-                      tooltipText: "Join " + (eventItem.modelData.meetingProvider || "meeting")
+                      // The provider patterns match known domains, but a bare URL
+                      // in an event's LOCATION also earns a button — and that
+                      // event can come from anyone who can send an invite. Show
+                      // the host so the click is never a blind one.
+                      tooltipText: {
+                        var host = String(eventItem.modelData.meetingUrl || "").replace(/^https?:\/\//, "").split("/")[0]
+                        var provider = eventItem.modelData.meetingProvider || "meeting"
+                        return host ? ("Join " + provider + "  ·  " + host) : ("Join " + provider)
+                      }
                       foreground: root.contentForeground
                       hoverColor: Color.accent
                       fontFamily: root.contentFontFamily
