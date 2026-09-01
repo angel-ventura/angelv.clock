@@ -59,14 +59,22 @@ omarchy plugin disable angelv.clock
 
 ## Requirements
 
-Omarchy 4 (`omarchy-shell`). Zone offsets are read with `date` from GNU
-coreutils and the home zone with `timedatectl` from systemd, both of which are
-already part of a standard Omarchy install.
+Omarchy 4 (`omarchy-shell`). **Nothing to install** — every command this uses
+already ships with Omarchy:
 
-Calendar sync, if you switch it on, additionally needs `python3` (standard
-library only — no pip packages) and `wl-copy` from wl-clipboard for the copy
-button. It is the only part of this plugin that touches the network, and only
-to GET the feed URLs you configure.
+| Command | Used for |
+| --- | --- |
+| `date`, `timedatectl` | Zone offsets, and detecting your home zone |
+| `python3` | Fetching and parsing calendar feeds. Standard library only — no pip packages |
+| `wl-copy` | The copy-agenda button, nothing else |
+| `notify-send`, `xdg-open` | Reminders, and opening a meeting link |
+
+`python3` is guaranteed: Omarchy depends on `uwsm`, which depends on Python.
+`wl-clipboard` is not a hard package dependency, so on an unusually stripped
+system the copy button may do nothing; everything else still works.
+
+Calendar sync is the only part that touches the network, and only to GET the
+feed URLs you configure.
 
 ## Configure
 
@@ -198,8 +206,14 @@ stacking — run one or the other.
 | `󰑐` | Sync now |
 | `󰕧` | Join a detected Meet / Zoom / Teams / Webex / Jitsi link. The tooltip names the host it will open |
 
-Reminders fire whether or not the popup is open: `"staged"` nudges at 10, 5 and
-1 minutes before an event, and a number fires once at that mark.
+### Reminders
+
+A desktop notification before a meeting starts, whether or not the popup is
+open. `"staged"` (the default) nudges at 10, 5 and 1 minutes; a number fires
+once at that mark. All-day events never notify, and each nudge fires once —
+never twice for the same event and stage.
+
+Set `"notifyUpcomingEvents": false` to silence them.
 
 ### Where a join click lands
 
