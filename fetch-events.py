@@ -981,6 +981,18 @@ def fetch_calendar(cal_info, window_start, window_end):
                 raw = safe_read_bytes(resp, max_bytes=MAX_ICAL_BYTES)
                 content = raw.decode("utf-8", errors="ignore")
 
+        # Pasting the calendar's web page instead of its .ics link is an easy
+        # mistake, and it fetches fine. Without this it would report "ok" with
+        # no events, which sends you looking in entirely the wrong place.
+        if "BEGIN:VCALENDAR" not in content.upper():
+            return {
+                "name": name,
+                "color": cal_info.get("color", "#4A90E2"),
+                "events": [],
+                "status": "error: not an iCalendar feed",
+                "count": 0,
+            }
+
         events = parse_ics(content, cal_info, window_start, window_end)
         return {
             "name": name,

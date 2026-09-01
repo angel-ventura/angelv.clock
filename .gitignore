@@ -2,3 +2,7 @@
 *.bak
 *.bak.*
 *.orig
+
+# Python bytecode, from importing fetch-events.py directly
+__pycache__/
+*.pyc
