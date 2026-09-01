@@ -134,41 +134,38 @@ is off.
 - Anything else that gives you an `.ics` or `webcal://` link works too —
   Proton, Nextcloud, Fastmail, a plain file on disk.
 
-**2. Turn sync on and save the link.** With the link on your clipboard:
+**2. Turn calendar sync on.**
 
 ```bash
 omarchy bar set angelv.clock calendarSync true --json
-
-python3 - <<'PY'
-import json, os, re, stat, subprocess
-url = subprocess.run(["wl-paste"], capture_output=True, text=True).stdout.strip()
-if not re.match(r"^(https?|webcals?)://[A-Za-z0-9.\-]+/", url):
-    raise SystemExit("No calendar link on the clipboard — copy it first.")
-path = os.path.expanduser("~/.config/omarchy/calendars.json")
-feeds = [{"name": "Personal", "url": url, "color": "#4A90E2", "enabled": True}]
-tmp = path + ".tmp"
-json.dump(feeds, open(tmp, "w"), indent=2)
-os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)
-os.replace(tmp, path)
-print("Saved:", url.split("://")[0] + "://" + url.split("://")[1].split("/")[0] + "/…")
-PY
 ```
 
-The link goes from the clipboard straight into a `0600` file. It is never
-printed, so it does not end up in your scrollback — and because it is not typed
-as a command argument, it stays out of your shell history too. That matters: a
-feed URL is a **bearer credential**, and anyone holding it can read your
-calendar.
+**3. Add the link.** Open `~/.config/omarchy/calendars.json` in any text editor
+and paste it in:
 
-**3. Reload the shell.**
+```json
+[
+  {
+    "name": "Personal",
+    "url": "paste your link here",
+    "color": "#4A90E2",
+    "enabled": true
+  }
+]
+```
+
+The file is created for you the first time the plugin runs, already with an
+empty entry to fill in. Keep it `chmod 600` — a feed URL is a bearer
+credential, and anyone holding it can read your calendar.
+
+**4. Reload the shell.**
 
 ```bash
 omarchy restart shell
 ```
 
-If you would rather not run the snippet, just edit
-`~/.config/omarchy/calendars.json` by hand — the format is below. Either way,
-`chmod 600` it.
+That is the whole setup. Edits to `calendars.json` are picked up straight away
+afterwards, so adding a second calendar later needs no restart.
 
 ### The feed list
 
