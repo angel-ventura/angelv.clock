@@ -231,14 +231,16 @@ and a real window can carry a Hyprland rule — a browser tab cannot.
 | Google Meet | The Meet web app, via `omarchy-launch-webapp` |
 | Teams, Webex, Jitsi, anything else | Your default browser |
 
-Zoom ships with Omarchy. For Meet, create the web app once:
+Zoom already ships with Omarchy. Meet does not, so create it once — the easiest
+way is Omarchy's own menu:
 
-```bash
-omarchy-webapp-install "Google Meet" "https://meet.google.com/" \
-  "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/google-meet.png"
-```
+**Super + Alt + Space → Install → Web App**, then give it the name `Google Meet`
+and the address `https://meet.google.com/`. It will ask for an icon; any image
+URL or an installed icon name works.
 
-Set `"meetingHandler": "browser"` to send everything to the browser instead.
+There is no need to do this at all — without a Meet web app, Meet links simply
+open in your browser, and everything else still works. Set
+`"meetingHandler": "browser"` to send every provider to the browser instead.
 
 ## Hacking on it
 
