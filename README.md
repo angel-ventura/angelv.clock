@@ -97,7 +97,7 @@ The zones are configuration, not code. Edit this widget's entry in
 | `homeHour12` | 12-hour clock for the home row |
 | `zones` | IANA zone names to show as extra rows |
 | `mementoMori` | `false` removes the life bar and its gesture. On by default |
-| `calendarSync` | `true` switches on calendar sync. Off by default |
+| `calendarSync` | Rarely needed — sync follows whether a feed is configured. Set `false` to stay inert next to a `calendars.json` another tool owns |
 | `syncIntervalMinutes` | Minutes between background pulls. `0` is manual only. Default 15, floor 5 |
 | `notifyUpcomingEvents` | `false` silences reminders. On by default when sync is on |
 | `notifyMinutesBefore` | `"staged"` (10m, 5m, 1m) or a single number of minutes |
@@ -118,30 +118,7 @@ is off.
 
 ### Setting it up
 
-**1. Copy your calendar's link.**
-
-- **Google** — [calendar.google.com](https://calendar.google.com) → hover the
-  calendar in the left sidebar → **⋮** → *Settings and sharing* → scroll to
-  **Integrate calendar** → copy **Secret address in iCal format**. It is shown
-  as dots; use the copy button rather than trying to read it.
-- **Apple iCloud** — [icloud.com/calendar](https://www.icloud.com/calendar) →
-  the share icon next to the calendar → turn on **Public Calendar** → copy the
-  `webcal://` link. Note that this genuinely publishes the calendar: anyone with
-  the link can read it. iCloud offers no private `.ics` equivalent.
-- **Outlook / Office 365** — *Settings → Calendar → Shared calendars →
-  Publish a calendar* → copy the **ICS** link. Many company tenants disable
-  this; if the option is missing, your admin has turned it off.
-- Anything else that gives you an `.ics` or `webcal://` link works too —
-  Proton, Nextcloud, Fastmail, a plain file on disk.
-
-**2. Turn calendar sync on.**
-
-```bash
-omarchy bar set angelv.clock calendarSync true --json
-```
-
-**3. Add the link.** Open `~/.config/omarchy/calendars.json` in any text editor
-and paste it in:
+Create `~/.config/omarchy/calendars.json` with your calendar link in it:
 
 ```json
 [
@@ -154,18 +131,21 @@ and paste it in:
 ]
 ```
 
-The file is created for you the first time the plugin runs, already with an
-empty entry to fill in. Keep it `chmod 600` — a feed URL is a bearer
-credential, and anyone holding it can read your calendar.
+Then `omarchy restart shell`. That is the whole setup — sync switches itself on
+once a feed is configured, and stays off while none is. Later edits to the file
+are picked up immediately, with no restart.
 
-**4. Reload the shell.**
+**Where the link comes from:**
 
-```bash
-omarchy restart shell
-```
+| | |
+| --- | --- |
+| **Google** | *Settings and sharing* → *Integrate calendar* → **Secret address in iCal format**. Shown as dots — use the copy button |
+| **Apple iCloud** | Share icon → turn on **Public Calendar** → copy the `webcal://` link. This genuinely publishes the calendar; iCloud has no private option |
+| **Outlook / 365** | *Settings → Calendar → Shared calendars → Publish a calendar*. Often disabled by company admins |
+| **Anything else** | Any `.ics` or `webcal://` link — Proton, Nextcloud, Fastmail, or a local file path |
 
-That is the whole setup. Edits to `calendars.json` are picked up straight away
-afterwards, so adding a second calendar later needs no restart.
+Treat these links like passwords: anyone holding one can read that calendar.
+The file is created readable only by you.
 
 ### The feed list
 

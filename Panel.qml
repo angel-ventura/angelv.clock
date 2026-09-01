@@ -267,7 +267,12 @@ Panel {
     path: Quickshell.env("HOME") + "/.config/omarchy/calendars.json"
     watchChanges: true
     printErrors: false
-    onFileChanged: root.syncCalendars(true)
+    onLoaded: root.configuredFeeds = Model.parseCalendarsConfig(configFile.text())
+    onFileChanged: {
+      configFile.reload()
+      root.configuredFeeds = Model.parseCalendarsConfig(configFile.text())
+      root.syncCalendars(true)
+    }
   }
 
   // Written atomically by fetch-events.py, under a name of this widget's own
@@ -390,9 +395,28 @@ Panel {
   // this widget's shell.json entry: a private iCal URL is a bearer credential
   // in disguise, and shell.json is the file people paste into forums.
 
-  // Sync is opt-in. With no calendars.json the python is never spawned, so a
-  // clock that is only ever a clock stays exactly as cheap as it was.
-  readonly property bool calendarSync: String(setting("calendarSync", false)) === "true"
+  // Sync switches itself on once there is something to sync. Configuring a
+  // feed is the consent, so there is no separate boolean to go and find —
+  // and with no feeds the python is never spawned, so a clock that is only
+  // ever a clock stays exactly as cheap as it was.
+  //
+  // "calendarSync" still overrides in both directions for the awkward cases:
+  // false to stay inert next to a calendars.json some other tool owns.
+  property var configuredFeeds: []
+
+  readonly property bool hasConfiguredFeed: {
+    for (var i = 0; i < configuredFeeds.length; i++) {
+      var feed = configuredFeeds[i]
+      if (feed && feed.enabled !== false && String(feed.url || "").length > 0) return true
+    }
+    return false
+  }
+
+  readonly property bool calendarSync: {
+    var override = setting("calendarSync", null)
+    if (override === null || String(override) === "") return hasConfiguredFeed
+    return String(override) === "true"
+  }
 
   // Minutes between background pulls. 0 means manual only. Google caches its
   // .ics feed on their side for a while regardless, so anything under about
