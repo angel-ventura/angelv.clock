@@ -1,7 +1,8 @@
-# Clock & Zones
+# Clock, Zones & Calendar
 
-An Omarchy bar widget: the clock, with a **time-zone converter** folded into
-the calendar popup. Installs as `angelv.clock`.
+An Omarchy bar widget: the clock, with a **time-zone converter** and optional
+**read-only calendar sync** folded into the calendar popup. Installs as
+`angelv.clock` — the plugin id is unchanged, only the repository was renamed.
 
 Based on Omarchy's built-in `omarchy.clock` widget — see
 [Attribution](#attribution).
@@ -30,7 +31,7 @@ value goes through `Color.*`, `Style.*`, or `bar.foreground`.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/angel-ventura/angelv.clock.git --enable
+omarchy plugin add https://github.com/angel-ventura/omarchy-clock-zones-calendar.git --enable
 ```
 
 Pick `center` when it asks for a section. Then remove the stock clock, since
