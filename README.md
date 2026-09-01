@@ -111,10 +111,66 @@ Notes:
 
 ## Calendar sync
 
-Off until you ask for it. With `"calendarSync": true` in the widget's
-`shell.json` entry, the popup grows a dot under every day that has something on
-it and an agenda for the day you click; days are only clickable once sync is on,
-so the grid stays the plain read-out it was designed as when it is off.
+Off until you ask for it. Once on, the popup grows a dot under every day that
+has something on it and an agenda for the day you click; days are only clickable
+once sync is on, so the grid stays the plain read-out it was designed as when it
+is off.
+
+### Setting it up
+
+**1. Copy your calendar's link.**
+
+- **Google** — [calendar.google.com](https://calendar.google.com) → hover the
+  calendar in the left sidebar → **⋮** → *Settings and sharing* → scroll to
+  **Integrate calendar** → copy **Secret address in iCal format**. It is shown
+  as dots; use the copy button rather than trying to read it.
+- **Apple iCloud** — [icloud.com/calendar](https://www.icloud.com/calendar) →
+  the share icon next to the calendar → turn on **Public Calendar** → copy the
+  `webcal://` link. Note that this genuinely publishes the calendar: anyone with
+  the link can read it. iCloud offers no private `.ics` equivalent.
+- **Outlook / Office 365** — *Settings → Calendar → Shared calendars →
+  Publish a calendar* → copy the **ICS** link. Many company tenants disable
+  this; if the option is missing, your admin has turned it off.
+- Anything else that gives you an `.ics` or `webcal://` link works too —
+  Proton, Nextcloud, Fastmail, a plain file on disk.
+
+**2. Turn sync on and save the link.** With the link on your clipboard:
+
+```bash
+omarchy bar set angelv.clock calendarSync true --json
+
+python3 - <<'PY'
+import json, os, re, stat, subprocess
+url = subprocess.run(["wl-paste"], capture_output=True, text=True).stdout.strip()
+if not re.match(r"^(https?|webcals?)://[A-Za-z0-9.\-]+/", url):
+    raise SystemExit("No calendar link on the clipboard — copy it first.")
+path = os.path.expanduser("~/.config/omarchy/calendars.json")
+feeds = [{"name": "Personal", "url": url, "color": "#4A90E2", "enabled": True}]
+tmp = path + ".tmp"
+json.dump(feeds, open(tmp, "w"), indent=2)
+os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)
+os.replace(tmp, path)
+print("Saved:", url.split("://")[0] + "://" + url.split("://")[1].split("/")[0] + "/…")
+PY
+```
+
+The link goes from the clipboard straight into a `0600` file. It is never
+printed, so it does not end up in your scrollback — and because it is not typed
+as a command argument, it stays out of your shell history too. That matters: a
+feed URL is a **bearer credential**, and anyone holding it can read your
+calendar.
+
+**3. Reload the shell.**
+
+```bash
+omarchy restart shell
+```
+
+If you would rather not run the snippet, just edit
+`~/.config/omarchy/calendars.json` by hand — the format is below. Either way,
+`chmod 600` it.
+
+### The feed list
 
 Feeds live in `~/.config/omarchy/calendars.json`, **not** in `shell.json` — a
 private iCal URL is a bearer credential in disguise, and `shell.json` is the file
@@ -138,9 +194,8 @@ changes, so no restart is needed after an edit.
 ]
 ```
 
-**Getting the links.** In Google Calendar, open the calendar's *Settings and
-sharing* → *Integrate calendar* → **Secret address in iCal format**. In iCloud,
-share the calendar as a **Public Calendar** and copy the `webcal://` link.
+Add as many as you like — each gets its own colour, a filter chip in the agenda
+header, and can be switched off with `"enabled": false` without deleting it.
 
 This is deliberately **read-only**: both of those are one-way feeds, so events
 cannot be created or edited from the panel. Two things follow from that, and
