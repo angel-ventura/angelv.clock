@@ -19,6 +19,7 @@ import json
 import re
 import secrets
 import stat
+import threading
 import time
 import calendar
 import urllib.request
@@ -48,6 +49,40 @@ MAX_CONFIG_BYTES = 1 * 1024 * 1024  # 1 MB limit for local config files
 MAX_OUTPUT_JSON_BYTES = 25 * 1024 * 1024  # 25 MB limit for generated event state
 MAX_RECURRENCE_ITERATIONS = 2000    # CPU-work ceiling for expanding recurrence rules
 MAX_EXPANDED_INSTANCES = 500        # Maximum instances generated per recurring/multiday event
+# The caps above bound one VEVENT, not a whole feed. A 10 MB .ics is still
+# room for tens of thousands of compact recurring events, and eight feeds are
+# parsed concurrently, so the pipeline needs ceilings of its own -- reached
+# long before the 25 MB output check, which only runs once everything is in
+# memory. Real calendars sit in the hundreds; these are set far above that.
+MAX_EVENTS_PER_FEED = 5000          # VEVENT blocks parsed from a single feed
+MAX_INSTANCES_PER_FEED = 10000      # Expanded instances kept from a single feed
+MAX_TOTAL_INSTANCES = 25000         # Expanded instances kept across all feeds together
+
+
+class InstanceBudget:
+    """
+    A ceiling on expanded instances shared by every feed being parsed.
+
+    Feeds are fetched on a thread pool, so a per-feed cap alone would still
+    let eight of them multiply. Slots come from one pool under a lock; once it
+    is empty, every parser stops expanding.
+    """
+
+    def __init__(self, limit=MAX_TOTAL_INSTANCES):
+        self._remaining = max(0, int(limit))
+        self._lock = threading.Lock()
+        self.exhausted = False
+
+    def take(self, count):
+        """Claim up to count slots, returning how many were granted."""
+        if count <= 0:
+            return 0
+        with self._lock:
+            granted = min(count, self._remaining)
+            self._remaining -= granted
+            if granted < count:
+                self.exhausted = True
+        return granted
 
 
 def safe_read_bytes(stream, max_bytes=MAX_ICAL_BYTES):
@@ -834,12 +869,17 @@ def expand_multiday_event(event, window_start, window_end):
     return instances if instances else [event]
 
 
-def parse_ics(content, cal_info, window_start, window_end):
+def parse_ics(content, cal_info, window_start, window_end, budget=None):
     """
     Parses an ICS file string into structured events within the time window.
+
+    Returns (events, truncated). truncated is True if any cap stopped the
+    parse early: MAX_EVENTS_PER_FEED, MAX_INSTANCES_PER_FEED, or the shared
+    InstanceBudget the concurrent feeds draw from.
     """
     lines = unfold_lines(content)
     raw_events = []
+    truncated = False
     in_vevent = False
     current = {}
 
@@ -855,6 +895,9 @@ def parse_ics(content, cal_info, window_start, window_end):
                     raw_events.append(current)
             in_vevent = False
             current = {}
+            if len(raw_events) >= MAX_EVENTS_PER_FEED:
+                truncated = True
+                break
             continue
 
         if not in_vevent:
@@ -898,7 +941,32 @@ def parse_ics(content, cal_info, window_start, window_end):
                     current["exdates"].append(ex_dt.strftime("%Y-%m-%d"))
 
     normalized = []
+    if budget is None:
+        budget = InstanceBudget()
+
+    def admit(instances):
+        """Trim a batch to what the per-feed cap and the shared budget allow."""
+        nonlocal truncated
+        room = MAX_INSTANCES_PER_FEED - len(normalized)
+        if room <= 0:
+            truncated = True
+            return []
+        allowed = instances[:room]
+        if len(allowed) < len(instances):
+            truncated = True
+        granted = budget.take(len(allowed))
+        if granted < len(allowed):
+            truncated = True
+            allowed = allowed[:granted]
+        return allowed
+
     for raw in raw_events:
+        # Stop before expanding anything more once either ceiling is reached.
+        # budget.exhausted may have been set by another feed's thread.
+        if len(normalized) >= MAX_INSTANCES_PER_FEED or budget.exhausted:
+            truncated = True
+            break
+
         start_dt = raw.get("DTSTART")
         if not start_dt:
             continue
@@ -937,24 +1005,29 @@ def parse_ics(content, cal_info, window_start, window_end):
             expanded = expand_recurring_event(evt, window_start, window_end)
             for rec_inst in expanded:
                 multidays = expand_multiday_event(rec_inst, window_start, window_end)
-                normalized.extend(multidays)
+                admitted = admit(multidays)
+                normalized.extend(admitted)
+                if len(admitted) < len(multidays):
+                    break
         else:
             if start_dt.strftime("%Y-%m-%d") not in evt["exdates"]:
                 multidays = expand_multiday_event(evt, window_start, window_end)
+                in_window = []
                 for inst in multidays:
                     inst_dt = datetime.strptime(inst["date_key"], "%Y-%m-%d")
                     if window_start <= inst_dt <= window_end:
-                        normalized.append(inst)
+                        in_window.append(inst)
+                normalized.extend(admit(in_window))
 
-    return normalized
+    return normalized, truncated
 
-def fetch_calendar(cal_info, window_start, window_end):
+def fetch_calendar(cal_info, window_start, window_end, budget=None):
     """Fetch single calendar from URL or local file."""
     name = cal_info.get("name", "Calendar")
     raw_url = cal_info.get("url", "").strip()
 
     if not raw_url:
-        return {"name": name, "color": cal_info.get("color", "#4A90E2"), "events": [], "status": "no_url", "count": 0}
+        return {"name": name, "color": cal_info.get("color", "#4A90E2"), "events": [], "status": "no_url", "count": 0, "truncated": False}
 
     # Convert webcal:// or webcals:// to https://
     if raw_url.startswith("webcal://"):
@@ -991,15 +1064,17 @@ def fetch_calendar(cal_info, window_start, window_end):
                 "events": [],
                 "status": "error: not an iCalendar feed",
                 "count": 0,
+                "truncated": False,
             }
 
-        events = parse_ics(content, cal_info, window_start, window_end)
+        events, truncated = parse_ics(content, cal_info, window_start, window_end, budget)
         return {
             "name": name,
             "color": cal_info.get("color", "#4A90E2"),
             "events": events,
             "status": "ok",
             "count": len(events),
+            "truncated": truncated,
         }
     except Exception as e:
         return {
@@ -1008,6 +1083,7 @@ def fetch_calendar(cal_info, window_start, window_end):
             "events": [],
             "status": f"error: {str(e)}",
             "count": 0,
+            "truncated": False,
         }
 
 def purge_plugin_data():
@@ -1044,11 +1120,14 @@ def sync_all_events():
 
     all_events = []
     cal_statuses = []
+    # One budget for the whole run, so the concurrent feeds cannot multiply
+    # past the ceiling by expanding independently.
+    budget = InstanceBudget()
 
     if enabled_cals:
         with ThreadPoolExecutor(max_workers=min(8, len(enabled_cals))) as executor:
             futures = [
-                executor.submit(fetch_calendar, c, window_start, window_end)
+                executor.submit(fetch_calendar, c, window_start, window_end, budget)
                 for c in enabled_cals
             ]
             for f in futures:
@@ -1059,6 +1138,7 @@ def sync_all_events():
                     "color": res["color"],
                     "status": res["status"],
                     "count": res["count"],
+                    "truncated": bool(res.get("truncated")),
                 })
 
     events_by_date = {}
@@ -1095,6 +1175,7 @@ def sync_all_events():
         "lastSyncedFormatted": now.strftime("%H:%M"),
         "totalEvents": len(all_events),
         "configuredCount": len(enabled_cals),
+        "truncated": any(c["truncated"] for c in cal_statuses),
         "calendars": cal_statuses,
         "eventsByDate": events_by_date,
     }
