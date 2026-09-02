@@ -46,7 +46,21 @@ WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
 
 MAX_ICAL_BYTES = 10 * 1024 * 1024   # 10 MB limit for calendar .ics content
 MAX_CONFIG_BYTES = 1 * 1024 * 1024  # 1 MB limit for local config files
-MAX_OUTPUT_JSON_BYTES = 25 * 1024 * 1024  # 25 MB limit for generated event state
+# The state file is parsed by the Quickshell process, where a string costs
+# several times its size on disk, so this ceiling is the shell's budget rather
+# than the disk's. It is enforced by trimming (see fit_output_to_limit), not by
+# refusing to write, so the file on disk is never larger than this whatever a
+# feed contains. 12 MB clears the worst case the instance ceilings below can
+# produce with realistic events (measured: 25,000 instances, 11.5 MB), so
+# trimming stays a backstop rather than something a real calendar meets.
+MAX_OUTPUT_JSON_BYTES = 12 * 1024 * 1024  # 12 MB limit for generated event state
+# The instance ceilings bound how many events reach the state file, not how
+# many bytes each carries, and nothing in iCalendar bounds a SUMMARY or a
+# LOCATION. Without these a feed of 25,000 events with long text fields is a
+# hundred megabytes for the shell to parse.
+MAX_TEXT_FIELD_CHARS = 500          # per-event title, location and calendar name
+MAX_ID_CHARS = 256                  # per-event id
+MAX_URL_CHARS = 2048                # per-event meeting URL
 MAX_RECURRENCE_ITERATIONS = 2000    # CPU-work ceiling for expanding recurrence rules
 MAX_EXPANDED_INSTANCES = 500        # Maximum instances generated per recurring/multiday event
 # The caps above bound one VEVENT, not a whole feed. A 10 MB .ics is still
@@ -1150,19 +1164,23 @@ def sync_all_events():
         start_time_str = evt["start_dt"].strftime("%H:%M")
         end_time_str = evt["end_dt"].strftime("%H:%M")
 
+        # "description" is deliberately not carried through. Nothing in the
+        # panel reads it, it is the largest field a provider sends (Google puts
+        # the whole meeting blurb in it), and it is the most private -- so it
+        # is parsed for a meeting link and then dropped rather than written to
+        # disk for the shell to load.
         events_by_date[d_key].append({
-            "id": evt["id"],
-            "title": evt["title"],
-            "calendar": evt["calendar"],
-            "description": evt.get("description", ""),
-            "color": evt["color"],
+            "id": clip(evt["id"], MAX_ID_CHARS),
+            "title": clip(evt["title"], MAX_TEXT_FIELD_CHARS),
+            "calendar": clip(evt["calendar"], MAX_TEXT_FIELD_CHARS),
+            "color": clip(evt["color"], 64),
             "allDay": evt["all_day"],
             "startTime": start_time_str if not evt["all_day"] else "All Day",
             "endTime": end_time_str if not evt["all_day"] else "",
-            "location": evt["location"],
+            "location": clip(evt["location"], MAX_TEXT_FIELD_CHARS),
             "startIso": evt["start_dt"].isoformat(),
-            "meetingUrl": evt.get("meetingUrl") or "",
-            "meetingProvider": evt.get("meetingProvider") or "",
+            "meetingUrl": clip(evt.get("meetingUrl") or "", MAX_URL_CHARS),
+            "meetingProvider": clip(evt.get("meetingProvider") or "", 64),
         })
 
     for d_key in events_by_date:
@@ -1180,13 +1198,101 @@ def sync_all_events():
         "eventsByDate": events_by_date,
     }
 
+    trimmed = fit_output_to_limit(output_data, MAX_OUTPUT_JSON_BYTES)
     write_secure_json(OUTPUT_PATH, output_data, mode=0o600, max_bytes=MAX_OUTPUT_JSON_BYTES)
 
     return {
         "status": "success",
-        "totalEvents": len(all_events),
+        "totalEvents": output_data["totalEvents"],
         "calendars": len(cal_statuses),
+        "trimmed": trimmed,
     }
+
+
+def clip(value, limit):
+    """Bound one text field on its way into the state file."""
+    text = "" if value is None else str(value)
+    return text[:limit]
+
+
+def fit_output_to_limit(output_data, max_bytes):
+    """
+    Trim the assembled state until it fits, rather than refusing to write it.
+
+    Days furthest from today go first: the calendar is read from today
+    outwards, so the far edge of the window is the least missed. Sizes are
+    subtracted per day and then confirmed exactly, so this stays linear
+    instead of re-serialising the whole document once per dropped day.
+    """
+    def exact_size():
+        return len(json.dumps(output_data, ensure_ascii=False, indent=2).encode("utf-8"))
+
+    total = exact_size()
+    if total <= max_bytes:
+        return False
+
+    events_by_date = output_data["eventsByDate"]
+    today = datetime.now().date()
+
+    def distance(key):
+        try:
+            return abs((datetime.strptime(key, "%Y-%m-%d").date() - today).days)
+        except ValueError:
+            return 10**6
+
+    order = sorted(events_by_date.keys(), key=distance, reverse=True)
+    day_sizes = {
+        k: len(json.dumps(v, ensure_ascii=False).encode("utf-8"))
+        for k, v in events_by_date.items()
+    }
+
+    for key in order:
+        if total <= max_bytes:
+            break
+        total -= day_sizes[key]
+        del events_by_date[key]
+
+    # The per-day sizes ignore indentation, so confirm against the real
+    # document and keep dropping if the estimate came up short.
+    while events_by_date and exact_size() > max_bytes:
+        for key in order:
+            if key in events_by_date:
+                del events_by_date[key]
+                break
+
+    output_data["truncated"] = True
+    output_data["totalEvents"] = sum(len(v) for v in events_by_date.values())
+    return True
+
+
+def read_plugin_files():
+    """
+    Read both of the plugin's own files and hand them back on stdout.
+
+    This exists so the shell never has to. Quickshell's FileView has no size
+    ceiling and follows symlinks, so a FileView.text() on a path the shell does
+    not control reads whatever is behind it -- a 208 MB file took the whole
+    Quickshell process to 1.26 GB and crashed it. safe_load_json() opens
+    through the directory fd with O_NOFOLLOW, rejects anything that is not a
+    regular file owned by this user, and refuses a file over its cap, so the
+    bytes that reach the shell are bounded by construction.
+
+    Read-only: no file is created, no directory is made, nothing is fetched.
+    """
+    out = {}
+    for key, path, cap in (
+        ("config", CONFIG_PATH, MAX_CONFIG_BYTES),
+        ("state", OUTPUT_PATH, MAX_OUTPUT_JSON_BYTES),
+    ):
+        try:
+            out[key] = safe_load_json(path, max_bytes=cap)
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            # A rejected file is reported rather than swallowed: refusing to
+            # read something silently is how a symlinked config becomes a
+            # mystery instead of a message.
+            out[key] = None
+            out.setdefault("errors", {})[key] = str(e)
+    return out
 
 
 def read_stdin_payload(max_bytes=MAX_CONFIG_BYTES):
@@ -1207,6 +1313,12 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] in ("--purge-data", "--cleanup", "--uninstall"):
         res = purge_plugin_data()
         print(json.dumps(res, indent=2))
+        sys.exit(0)
+
+    # Ahead of ensure_config_exists(): a read must not be able to create the
+    # very file it was asked to read.
+    if len(sys.argv) > 1 and sys.argv[1] == "--read":
+        print(json.dumps(read_plugin_files(), ensure_ascii=False))
         sys.exit(0)
 
     ensure_config_exists()
@@ -1233,7 +1345,12 @@ def main():
             print(json.dumps(content, ensure_ascii=False, indent=2))
             sys.exit(0)
 
-    result = sync_all_events()
+    try:
+        result = sync_all_events()
+    except Exception as e:
+        # A sync that cannot finish reports it. Letting this reach the top
+        # level would print a traceback onto the stdout the shell is reading.
+        result = {"status": "error", "message": str(e)}
     print(json.dumps(result))
 
 

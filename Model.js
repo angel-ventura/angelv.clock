@@ -483,22 +483,33 @@ function isDaylight(clock) {
 // A missing or half-written state file reads as "no events" rather than
 // throwing: fetch-events.py writes it atomically, but it simply does not
 // exist until the first sync completes.
+function emptyEventsData() {
+  return { eventsByDate: {}, calendars: [], lastSyncedFormatted: "", totalEvents: 0, configuredCount: 0 }
+}
+
+// Takes the already-decoded state object. The shell no longer sees the state
+// file's bytes -- `fetch-events.py --read` reads it under a size cap and hands
+// back JSON -- so the text-taking wrapper below is only kept for callers that
+// still have a string.
+function parseEventsData(data) {
+  if (!data || typeof data !== "object") return emptyEventsData()
+  return {
+    eventsByDate: data.eventsByDate || {},
+    calendars: data.calendars || [],
+    lastSyncedFormatted: data.lastSyncedFormatted || "",
+    totalEvents: data.totalEvents || 0,
+    configuredCount: data.configuredCount !== undefined
+      ? data.configuredCount
+      : (data.calendars ? data.calendars.length : 0)
+  }
+}
+
 function parseEventsFile(text) {
-  var empty = { eventsByDate: {}, calendars: [], lastSyncedFormatted: "", totalEvents: 0, configuredCount: 0 }
-  if (!text || typeof text !== "string") return empty
+  if (!text || typeof text !== "string") return emptyEventsData()
   try {
-    var data = JSON.parse(text)
-    return {
-      eventsByDate: data.eventsByDate || {},
-      calendars: data.calendars || [],
-      lastSyncedFormatted: data.lastSyncedFormatted || "",
-      totalEvents: data.totalEvents || 0,
-      configuredCount: data.configuredCount !== undefined
-        ? data.configuredCount
-        : (data.calendars ? data.calendars.length : 0)
-    }
+    return parseEventsData(JSON.parse(text))
   } catch (e) {
-    return empty
+    return emptyEventsData()
   }
 }
 
@@ -511,6 +522,26 @@ function parseCalendarsConfig(text) {
     return Array.isArray(data) ? data : []
   } catch (e) {
     return []
+  }
+}
+
+// The bounded reader returns both of the plugin's files in one object, plus a
+// reason for anything it refused to read. A file it rejected comes back null
+// rather than half-read, so a symlinked or oversized config leaves the panel
+// standing and says why instead of quietly showing an empty calendar.
+function parsePluginFiles(text) {
+  var empty = { config: [], state: null, errors: {} }
+  if (!text || typeof text !== "string") return empty
+  try {
+    var data = JSON.parse(text)
+    if (!data || typeof data !== "object") return empty
+    return {
+      config: Array.isArray(data.config) ? data.config : [],
+      state: (data.state && typeof data.state === "object") ? data.state : null,
+      errors: (data.errors && typeof data.errors === "object") ? data.errors : {}
+    }
+  } catch (e) {
+    return empty
   }
 }
 

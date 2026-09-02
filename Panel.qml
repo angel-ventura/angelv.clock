@@ -260,6 +260,25 @@ Panel {
     onTriggered: if (!zoneProbe.running) zoneProbe.running = true
   }
 
+  readonly property string helperPath:
+    Qt.resolvedUrl("fetch-events.py").toString().replace(/^file:\/\//, "")
+
+  // Neither file below is read by the shell itself.
+  //
+  // FileView has no size ceiling and follows symlinks, so FileView.text() on a
+  // path the shell does not own pulls in whatever is behind it. Measured: a
+  // 208 MB file takes the Quickshell process to 1.26 GB and crashes it, which
+  // takes the whole bar down, not just this widget. Both of these paths sit in
+  // the user's own directories where any other program can replace them with a
+  // symlink or something enormous.
+  //
+  // So they are watchers, nothing more. A FileView that is never asked for
+  // text() materialises nothing -- the same 208 MB file costs 4 MB when it is
+  // only watched. The bytes come instead from `fetch-events.py --read`, which
+  // opens both files through their directory fd with O_NOFOLLOW, rejects
+  // anything that is not a regular file this user owns, and refuses one over
+  // its cap. Same guarantees the fetcher already applies to a downloaded feed.
+
   // The feed list is the user's own file and is meant to be hand-editable, so
   // a save from any editor re-syncs without the panel being reopened.
   FileView {
@@ -267,12 +286,14 @@ Panel {
     path: Quickshell.env("HOME") + "/.config/omarchy/calendars.json"
     watchChanges: true
     printErrors: false
-    onLoaded: root.configuredFeeds = Model.parseCalendarsConfig(configFile.text())
+    onLoaded: root.readPluginFiles()
     onFileChanged: {
-      configFile.reload()
-      root.configuredFeeds = Model.parseCalendarsConfig(configFile.text())
+      root.readPluginFiles()
       root.syncCalendars(true)
     }
+    // No calendars.json is the ordinary case for a clock that is only ever a
+    // clock: nothing to read, nothing to sync, and no helper spawned at all.
+    onLoadFailed: root.configuredFeeds = []
   }
 
   // Written atomically by fetch-events.py, under a name of this widget's own
@@ -282,23 +303,53 @@ Panel {
     path: Quickshell.env("HOME") + "/.local/state/omarchy/angelv-clock-events.json"
     watchChanges: true
     printErrors: false
-    onLoaded: root.loadEvents(eventsFile.text())
-    onFileChanged: {
-      eventsFile.reload()
-      root.loadEvents(eventsFile.text())
+    onLoaded: root.readPluginFiles()
+    onFileChanged: root.readPluginFiles()
+  }
+
+  // Both watchers fire on the same sync, so reads are coalesced rather than
+  // spawning the reader twice for one write.
+  property bool pendingRead: false
+
+  Timer {
+    id: readDebounce
+    interval: 120
+    onTriggered: {
+      if (readProc.running) {
+        root.pendingRead = true
+        return
+      }
+      readProc.running = true
+    }
+  }
+
+  function readPluginFiles() {
+    readDebounce.restart()
+  }
+
+  Process {
+    id: readProc
+    command: ["python3", root.helperPath, "--read"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        root.applyPluginFiles(text)
+        if (root.pendingRead) {
+          root.pendingRead = false
+          readDebounce.restart()
+        }
+      }
     }
   }
 
   Process {
     id: fetchProc
-    command: ["python3", Qt.resolvedUrl("fetch-events.py").toString().replace(/^file:\/\//, "")]
+    command: ["python3", root.helperPath]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
         root.syncing = false
-        eventsFile.reload()
-        root.loadEvents(eventsFile.text())
-        root.checkUpcomingNotifications()
+        root.readPluginFiles()
       }
     }
   }
@@ -404,6 +455,10 @@ Panel {
   // false to stay inert next to a calendars.json some other tool owns.
   property var configuredFeeds: []
 
+  // Whatever the reader refused, and why. A rejected file should read as a
+  // message, not as an empty calendar.
+  property var readErrors: ({})
+
   readonly property bool hasConfiguredFeed: {
     for (var i = 0; i < configuredFeeds.length; i++) {
       var feed = configuredFeeds[i]
@@ -412,9 +467,14 @@ Panel {
     return false
   }
 
+  // A config the reader refused is not the same as no config. Staying switched
+  // on is what lets the panel say so, instead of a symlinked calendars.json
+  // quietly turning the widget back into a plain clock.
+  readonly property bool configUnreadable: !!(root.readErrors && root.readErrors.config)
+
   readonly property bool calendarSync: {
     var override = setting("calendarSync", null)
-    if (override === null || String(override) === "") return hasConfiguredFeed
+    if (override === null || String(override) === "") return hasConfiguredFeed || configUnreadable
     return String(override) === "true"
   }
 
@@ -502,12 +562,20 @@ Panel {
     fetchProc.running = true
   }
 
-  function loadEvents(text) {
-    var parsed = Model.parseEventsFile(text)
+  // The one place either file's contents enter the shell, and they arrive
+  // already bounded and parsed by the helper.
+  function applyPluginFiles(text) {
+    var payload = Model.parsePluginFiles(text)
+    root.configuredFeeds = payload.config
+    root.readErrors = payload.errors
+
+    var parsed = Model.parseEventsData(payload.state)
     root.eventsByDate = parsed.eventsByDate
     root.calendarStatuses = parsed.calendars
     root.lastSyncedLabel = parsed.lastSyncedFormatted
     root.totalEvents = parsed.totalEvents
+
+    root.checkUpcomingNotifications()
   }
 
   function copyAgenda() {
@@ -572,6 +640,10 @@ Panel {
     // what this open is about.
     root.selectedDateKey = ""
     root.agendaCopied = false
+    // A read on every open, not just a sync: the file watchers stop firing if
+    // the state file is deleted rather than replaced in place, and an open is
+    // the moment the contents actually have to be right.
+    root.readPluginFiles()
     root.syncCalendars(false)
   }
 
@@ -1373,6 +1445,10 @@ Panel {
                 // AutoText would sniff a calendar name for markup.
                 textFormat: Text.PlainText
                 text: {
+                  // A file the reader refused -- symlinked, oversized, not a
+                  // regular file -- is a different problem from an empty day.
+                  if (root.readErrors && root.readErrors.config) return "Calendar config could not be read"
+                  if (root.readErrors && root.readErrors.state) return "Event cache could not be read"
                   if (root.calendarStatuses.length === 0) return "No calendars configured"
                   for (var i = 0; i < root.calendarStatuses.length; i++) {
                     var st = String(root.calendarStatuses[i].status || "")
