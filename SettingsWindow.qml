@@ -50,6 +50,13 @@ Item {
   property var calendars: []
 
   property var zoneList: []
+
+  // Whatever this system actually closes a window with. Asserting "Super+Q"
+  // is wrong the moment somebody rebinds it, and this is a window precisely so
+  // that the key works on it -- so it is worth getting right rather than
+  // guessing. Empty until read, and the footer says "your close-window key"
+  // until then.
+  property string closeKeyLabel: ""
   property string tab: "calendars"
 
   // Nothing is written while this is false.
@@ -74,6 +81,7 @@ Item {
     root.loadEntry()
     root.loadCalendars()
     if (root.zoneList.length === 0) zoneListProc.running = true
+    if (root.closeKeyLabel === "") bindsProc.running = true
     window.visible = true
     settleTimer.restart()
   }
@@ -172,6 +180,19 @@ Item {
   // enough to risk that on.
   readonly property var clockKeys: ["hour12", "weekStartDay", "mementoMori", "birthYear", "lifeExpectancy"]
   readonly property var zoneKeys: ["zones", "homeName", "homeHour12"]
+  readonly property var calendarKeys: ["syncIntervalMinutes", "notifyUpcomingEvents",
+    "notifyMinutesBefore", "meetingHandler"]
+
+  function resetCurrentTab() {
+    if (root.tab === "clock") root.resetKeys(root.clockKeys)
+    else if (root.tab === "zones") root.resetKeys(root.zoneKeys)
+    else root.resetKeys(root.calendarKeys)
+  }
+
+  readonly property string resetHint: root.tab === "clock"
+    ? "Reset the clock settings on this tab"
+    : (root.tab === "zones" ? "Reset the zone settings on this tab"
+                            : "Reset the sync settings on this tab — your feeds are kept")
 
   function resetKeys(keys) {
     if (!root.ready) return
@@ -259,6 +280,44 @@ Item {
     }
   }
 
+  // Omarchy routes its binds through a Lua dispatcher, so a bind cannot be
+  // found by looking for the killactive dispatcher -- but it carries the
+  // human-readable description the bind was declared with, and Omarchy's is
+  // "Close window". A rebind keeps that description; anything else falls back.
+  Process {
+    id: bindsProc
+    property string buffer: ""
+    command: ["hyprctl", "binds", "-j"]
+    stdout: SplitParser {
+      splitMarker: ""
+      onRead: function (data) { bindsProc.buffer += data }
+    }
+    onExited: function (code, status) {
+      var label = ""
+      try {
+        var binds = JSON.parse(bindsProc.buffer)
+        for (var i = 0; i < binds.length; i++) {
+          if (String(binds[i].description || "").toLowerCase() !== "close window") continue
+          // Hyprland's modmask is the Wayland one: shift 1, ctrl 4, alt 8,
+          // super 64. Anything else is not worth naming in a hint.
+          var mods = []
+          var mask = Number(binds[i].modmask) || 0
+          if (mask & 64) mods.push("Super")
+          if (mask & 4) mods.push("Ctrl")
+          if (mask & 8) mods.push("Alt")
+          if (mask & 1) mods.push("Shift")
+          var key = String(binds[i].key || "")
+          if (!key) continue
+          if (key.length === 1) key = key.toUpperCase()
+          mods.push(key)
+          label = mods.join("+")
+          break
+        }
+      } catch (e) { /* no hyprctl, or a shape we do not know: fall back */ }
+      root.closeKeyLabel = label
+    }
+  }
+
   Process {
     id: zoneListProc
     property string buffer: ""
@@ -295,21 +354,21 @@ Item {
     }
 
     ConfirmDialog {
-      id: clockResetDialog
+      id: resetDialog
       anchors.fill: parent
-      message: "Reset clock settings?\n\nAgenda times, week start and memento mori "
-        + "go back to their defaults. Your zones and calendars are not touched."
+      // Each message says what survives as well as what goes. The calendars
+      // one matters most: the feed list is not settings, it is a credential
+      // that exists nowhere else, so no button in here deletes it.
+      message: root.tab === "clock"
+        ? "Reset clock settings?\n\nAgenda times, week start and memento mori go back "
+          + "to their defaults. Your zones and calendars are not touched."
+        : (root.tab === "zones"
+          ? "Reset zone settings?\n\nRemoves every zone you have added, along with your "
+            + "home label. Your calendars are not touched."
+          : "Reset sync settings?\n\nSync interval, reminders and where links open go back "
+            + "to their defaults. Your calendar feeds are kept — remove those one at a time.")
       confirmText: "Reset"
-      onConfirmed: root.resetKeys(root.clockKeys)
-    }
-
-    ConfirmDialog {
-      id: zoneResetDialog
-      anchors.fill: parent
-      message: "Reset zone settings?\n\nRemoves every zone you have added, along "
-        + "with your home label. Your calendars are not touched."
-      confirmText: "Reset"
-      onConfirmed: root.resetKeys(root.zoneKeys)
+      onConfirmed: root.resetCurrentTab()
     }
 
     FocusScope {
@@ -348,6 +407,23 @@ Item {
         }
       }
 
+      // Right of the tabs, because it acts on whichever tab is showing. An
+      // icon rather than a word so it cannot be mistaken for a normal action,
+      // and a tooltip that names what it clears before you click it.
+      Button {
+        anchors.right: parent.right
+        anchors.top: parent.top
+        // A word, not a glyph. The obvious icon for this (nf-md-backup-restore,
+        // U+F0455) draws as notdef here even though the font's cmap carries it
+        // and its neighbours render -- and a plugin cannot assume anything
+        // about the font on someone else's machine anyway. The tooltip says
+        // which settings go.
+        text: "Reset"
+        tooltipText: root.resetHint
+        bordered: true
+        onClicked: resetDialog.opened = true
+      }
+
       PanelSeparator {
         id: tabRule
         anchors.top: tabRow.bottom
@@ -369,7 +445,8 @@ Item {
         Text {
           anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
-          text: "Esc or Super+Q closes this window · changes save as you make them"
+          text: "Esc or " + (root.closeKeyLabel !== "" ? root.closeKeyLabel : "your close-window key")
+            + " closes this window · changes save as you make them"
           color: Qt.darker(Color.foreground, 1.9)
           font.pixelSize: Style.font.caption
         }
@@ -458,10 +535,36 @@ Item {
                     }
 
                     TextField {
+                      id: colorField
                       width: calBody.width * 0.22
                       text: String(calRow.modelData.color || "#4A90E2")
                       placeholderText: "#RRGGBB"
                       onEditingFinished: root.mutateCalendar(calRow.index, "color", text)
+                    }
+
+                    // The swatch reads the field as it is typed, not the saved
+                    // value, so a wrong code shows itself before it is
+                    // committed. A code QML cannot parse would throw, so it is
+                    // checked first and the swatch goes hollow instead --
+                    // which is also the only signal that the code is bad.
+                    Rectangle {
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: Style.space(20)
+                      height: Style.space(20)
+                      radius: Style.cornerRadius > 0 ? width / 2 : 0
+                      readonly property bool valid: /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(colorField.text)
+                      color: valid ? colorField.text : "transparent"
+                      border.width: Style.spacing.hairline
+                      border.color: valid ? Qt.darker(Color.foreground, 2.4)
+                        : Qt.darker(Color.foreground, 1.4)
+
+                      Text {
+                        anchors.centerIn: parent
+                        visible: !parent.valid
+                        text: "?"
+                        color: Qt.darker(Color.foreground, 1.4)
+                        font.pixelSize: Style.font.bodySmall
+                      }
                     }
 
                     ToggleSwitch {
@@ -664,13 +767,7 @@ Item {
               }
             }
 
-            Button {
-              text: "Reset zone settings"
-              bordered: true
-              onClicked: zoneResetDialog.opened = true
-            }
-
-            SearchableDropdown {
+SearchableDropdown {
               width: body.width * 0.62
               label: "Add a zone"
               triggerLabel: "Add a zone"
@@ -704,11 +801,27 @@ Item {
               }
             }
 
+            // Unset means the locale decides, exactly as the popup reads it --
+            // and for a US locale that is Sunday, not Monday. Offering only
+            // Monday and Sunday would have shown the wrong one as current and
+            // then written it.
+            //
+            // Stored as a weekday *name*, which is the form the popup's own
+            // `w` toggle writes. coerceWeekStart() takes a number too, but two
+            // spellings of one setting in one file is how they drift.
             Dropdown {
               label: "Week starts on"
-              value: String(root.setting("weekStartDay", 1)) === "0" ? "Sunday" : "Monday"
-              options: ["Monday", "Sunday"]
-              onChanged: function (v) { root.put("weekStartDay", v === "Sunday" ? 0 : 1) }
+              value: {
+                var raw = String(root.setting("weekStartDay", "")).toLowerCase()
+                if (raw === "monday" || raw === "mon" || raw === "1") return "Monday"
+                if (raw === "sunday" || raw === "sun" || raw === "0") return "Sunday"
+                return "follow locale"
+              }
+              options: ["follow locale", "Monday", "Sunday"]
+              onChanged: function (v) {
+                if (v === "follow locale") root.put("weekStartDay", undefined)
+                else root.put("weekStartDay", v.toLowerCase())
+              }
             }
 
             PanelSeparator {
@@ -754,16 +867,7 @@ Item {
               font.pixelSize: Style.font.bodySmall
             }
 
-            PanelSeparator {
-              width: parent.width
-              foreground: Color.foreground
-            }
 
-            Button {
-              text: "Reset clock settings"
-              bordered: true
-              onClicked: clockResetDialog.opened = true
-            }
           }
         }
       }
