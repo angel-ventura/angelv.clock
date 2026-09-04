@@ -1107,9 +1107,13 @@ def fetch_calendar(cal_info, window_start, window_end, budget=None):
     """Fetch single calendar from URL or local file."""
     name = cal_info.get("name", "Calendar")
     raw_url = cal_info.get("url", "").strip()
+    # Reported whatever happens to the fetch: a Google feed that is briefly
+    # unreachable is still a Google calendar, and the panel's "new event"
+    # button should not blink out because a sync failed.
+    is_google = bool(google_calendar_id(raw_url))
 
     if not raw_url:
-        return {"name": name, "color": cal_info.get("color", "#4A90E2"), "events": [], "status": "no_url", "count": 0, "truncated": False}
+        return {"name": name, "color": cal_info.get("color", "#4A90E2"), "events": [], "status": "no_url", "count": 0, "truncated": False, "google": is_google}
 
     # Convert webcal:// or webcals:// to https://
     if raw_url.startswith("webcal://"):
@@ -1147,6 +1151,7 @@ def fetch_calendar(cal_info, window_start, window_end, budget=None):
                 "status": "error: not an iCalendar feed",
                 "count": 0,
                 "truncated": False,
+                "google": is_google,
             }
 
         events, truncated = parse_ics(content, cal_info, window_start, window_end, budget)
@@ -1157,6 +1162,7 @@ def fetch_calendar(cal_info, window_start, window_end, budget=None):
             "status": "ok",
             "count": len(events),
             "truncated": truncated,
+            "google": is_google,
         }
     except Exception as e:
         return {
@@ -1166,6 +1172,7 @@ def fetch_calendar(cal_info, window_start, window_end, budget=None):
             "status": f"error: {str(e)}",
             "count": 0,
             "truncated": False,
+            "google": is_google,
         }
 
 def purge_plugin_data():
@@ -1221,6 +1228,7 @@ def sync_all_events():
                     "status": res["status"],
                     "count": res["count"],
                     "truncated": bool(res.get("truncated")),
+                    "google": bool(res.get("google")),
                 })
 
     events_by_date = {}

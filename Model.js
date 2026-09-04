@@ -666,6 +666,40 @@ function calendarLaunchCommand(url, handler) {
   return ["omarchy-launch-webapp", link]
 }
 
+// "New event on this day" in Google Calendar.
+//
+// action=TEMPLATE is the same link every "Add to Calendar" button on the web
+// uses, and it is the one Google documents. `dates` as a bare day pair opens
+// the form as an all-day event on that date: one click from a timed one, and
+// better than inventing a start hour nobody asked for. The end is the *next*
+// day because Google reads the range as half-open.
+//
+// The event lands in whichever calendar is the default for the signed-in
+// account. There is a &src= for naming one, deliberately not used: a feed can
+// be a calendar you only subscribe to, and a create link aimed at one you
+// cannot write to fails in a way that reads like the button is broken.
+function googleNewEventUrl(dateKeyStr) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKeyStr || ""))
+  if (!m) return ""
+  var year = Number(m[1]), month = Number(m[2]), day = Number(m[3])
+  // Built in UTC so month-end arithmetic cannot be dragged over a boundary by
+  // the local zone: these are calendar dates, not instants.
+  var start = new Date(Date.UTC(year, month - 1, day))
+  // Date.UTC rolls a nonsense date forward rather than refusing it, so the
+  // shape check above is not enough on its own -- "2026-13-99" would sail
+  // through as some day the following April.
+  if (start.getUTCFullYear() !== year || start.getUTCMonth() !== month - 1
+      || start.getUTCDate() !== day) return ""
+  // The end is the *next* day: Google reads the range as half-open.
+  var next = new Date(start.getTime() + 86400000)
+  var pad = function (n) { return (n < 10 ? "0" : "") + n }
+  var stamp = function (dt) {
+    return dt.getUTCFullYear() + pad(dt.getUTCMonth() + 1) + pad(dt.getUTCDate())
+  }
+  return "https://calendar.google.com/calendar/render?action=TEMPLATE&dates="
+    + stamp(start) + "/" + stamp(next)
+}
+
 // Minutes from now until an ISO start stamp, negative once it has begun.
 function minutesUntil(startIso, now) {
   if (!startIso) return NaN
@@ -747,6 +781,7 @@ if (typeof module !== "undefined") {
     notificationStage: notificationStage,
     meetingLaunchCommand: meetingLaunchCommand,
     calendarLaunchCommand: calendarLaunchCommand,
+    googleNewEventUrl: googleNewEventUrl,
     formatEventTime: formatEventTime
   }
 }

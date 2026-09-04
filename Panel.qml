@@ -523,6 +523,15 @@ Panel {
 
   readonly property var agendaEvents: Model.filterEvents(root.eventsByDate[root.agendaDateKey] || [], root.hiddenCalendars)
 
+  // Only Google can be handed a "create an event" link, so the button appears
+  // only where it would do something. Read from the feed status rather than
+  // from the day's events, since the day this matters most on is an empty one.
+  readonly property bool hasGoogleCalendar: {
+    for (var i = 0; i < root.calendarStatuses.length; i++)
+      if (root.calendarStatuses[i].google) return true
+    return false
+  }
+
   function eventsOn(dateKeyStr) {
     return Model.filterEvents(root.eventsByDate[dateKeyStr] || [], root.hiddenCalendars)
   }
@@ -567,6 +576,10 @@ Panel {
     root.totalEvents = parsed.totalEvents
 
     root.checkUpcomingNotifications()
+  }
+
+  function newEventOnSelectedDay() {
+    root.openEvent(Model.googleNewEventUrl(root.agendaDateKey))
   }
 
   function openEvent(url) {
@@ -1352,6 +1365,17 @@ Panel {
                   anchors.right: parent.right
                   anchors.verticalCenter: parent.verticalCenter
                   spacing: Style.space(2)
+
+                  PanelActionButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.hasGoogleCalendar
+                    iconText: "󰐕"
+                    tooltipText: "New event on this day in Google Calendar"
+                    foreground: root.contentForeground
+                    hoverColor: Color.accent
+                    fontFamily: root.contentFontFamily
+                    onClicked: root.newEventOnSelectedDay()
+                  }
 
                   PanelActionButton {
                     anchors.verticalCenter: parent.verticalCenter

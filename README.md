@@ -202,10 +202,11 @@ stacking — run one or the other.
 | Click the big date at the top | Back to today: the current month, and the agenda back on today. Live only when there is something to undo |
 | Calendar chips | Filter by calendar |
 | Refresh button | Sync now. Its tooltip shows when it last synced |
+| Plus button | Start a new event on the shown day in Google Calendar. Only appears if a Google feed is configured |
 | Click an event | Open it in Google Calendar, where you can edit or delete it |
 | Camera button on an event | Join a detected Meet / Zoom / Teams / Webex / Jitsi link. The tooltip names the host it will open |
 
-The two buttons sit in the agenda header and on each event row; hover either
+The buttons sit in the agenda header and on each event row; hover any of them
 for a tooltip. (They are drawn with Nerd Font icons, which is why they are
 described in words here rather than shown.)
 
@@ -216,6 +217,12 @@ events, so the link is built from the event id in the feed and the calendar
 address in the feed URL; where an id is not one Google issued, the click falls
 back to that day's view. Feeds that are not Google's have no address to build
 from, and their rows are not clickable.
+
+The plus button opens Google's own new-event form with the day filled in, as
+an all-day event you can give a time in the form. It lands in whichever
+calendar is the default for the account you are signed in as — a feed can be
+one you only subscribe to, so the button does not try to aim at the calendar
+the agenda came from. Nothing is created until you save it there.
 
 **Sign in to Google in Chromium first.** By default the event opens as an
 Omarchy web app, and those run in Chromium — a separate browser profile from
@@ -242,7 +249,7 @@ event to open it in Google Calendar follows the same setting.
 | --- | --- |
 | Zoom | `zoommtg://`, which Omarchy's own handler turns into the web client. A natively installed Zoom claims that scheme first, which is better still |
 | Google Meet | Its own window, via `omarchy-launch-webapp` |
-| An event | Google Calendar in its own window, same way |
+| An event, or the plus button | Google Calendar in its own window, same way |
 | Teams, Webex, Jitsi, anything else | Your default browser |
 
 **You do not need to install a web app for any of this.**
