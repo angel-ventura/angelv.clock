@@ -75,8 +75,19 @@ Item {
     return path.replace(/\/$/, "")
   }
 
+  // Fitted to the screen it is about to open on, before it opens.
+  function sizeWindow() {
+    var screen = (Quickshell.screens && Quickshell.screens.length > 0)
+      ? Quickshell.screens[0] : null
+    var sw = screen && screen.width > 0 ? screen.width : 1920
+    var sh = screen && screen.height > 0 ? screen.height : 1080
+    window.implicitWidth = Math.max(520, Math.min(900, Math.round(sw * 0.42)))
+    window.implicitHeight = Math.max(420, Math.min(820, Math.round(sh * 0.62)))
+  }
+
   function open(payloadJson) {
     root.ready = false
+    root.sizeWindow()
     root.closingFromHost = false
     root.loadEntry()
     root.loadCalendars()
@@ -343,6 +354,23 @@ Item {
     id: window
     title: "Clock, Zones & Calendar — Settings"
     color: Color.background
+
+    // Sized from the screen rather than fixed, so this is not a window that
+    // only fits the machine it was written on. Clamped at both ends: small
+    // enough for a 768px laptop with a bar on it, and not so wide on a 4K
+    // panel that a form of short rows is stretched across it.
+    //
+    // Assigned in open() before the window is shown rather than bound, so it
+    // maps at its final size and a compositor centring rule has the real size
+    // to work from.
+    //
+    // Screen dimensions come back in logical pixels, so this is already
+    // correct on a scaled display: a 2560x1440 panel at scale 1.25 reports
+    // 2048x1152 and gets a window sized for what the user actually sees.
+    //
+    // Deliberately not left to a Hyprland `size` rule: a percentage there is
+    // silently ignored, with no configerror to say so, and a plugin should fit
+    // the screen without anyone writing a window rule first.
     implicitWidth: 760
     implicitHeight: 700
     minimumSize: Qt.size(520, 420)

@@ -18,8 +18,8 @@ Based on Omarchy's built-in `omarchy.clock` widget — see
   quoted in someone else's zone lands in yours at a glance.
 - **The home row is detected from `timedatectl`**, so it is always this
   machine's real zone. You never list it yourself.
-- **No memento mori.** The stock clock's life bar and its double-tap gesture
-  are not here. The year bar above the calendar stays.
+- **A settings window.** Feeds, zones and every option have a gear in the
+  popup rather than a JSON file to edit. See [Configure](#configure).
 - **Calendar sync, read-only and off by default.** Point it at Google's or
   Apple's iCal link and the month grid gets event dots, with an agenda for the
   day you click and optional reminders before a meeting. See
@@ -67,6 +67,7 @@ already ships with Omarchy:
 | `date`, `timedatectl` | Zone offsets, and detecting your home zone |
 | `python3` | Fetching and parsing calendar feeds. Standard library only — no pip packages |
 | `notify-send`, `xdg-open` | Reminders, and opening a meeting or calendar link |
+| `hyprctl` | Reading your close-window key, to name it in the settings window. Optional — the hint just says "your close-window key" without it |
 
 `python3` is guaranteed: Omarchy depends on `uwsm`, which depends on Python.
 
@@ -83,6 +84,20 @@ It is a real window rather than a panel inside the popup: the popup is capped
 to the width of the month grid, which is nowhere to put a searchable zone
 picker or a pasted iCal URL. Every control writes as you change it; the popup
 picks the change up the next time you open it.
+
+| Tab | |
+| --- | --- |
+| **Calendars** | Add, rename, recolour, disable or remove a feed. A swatch beside each colour code shows the colour as you type it. Below the list: sync interval, reminders, and where links open |
+| **Zones** | Your home row's label and clock format, the zones you have added, and a searchable picker for adding more |
+| **Clock** | Agenda times and which day the week starts on |
+
+**Reset** sits beside the tabs and clears the tab you are looking at, after a
+confirmation naming what goes. On the Calendars tab it resets the sync options
+and **keeps your feeds** — a feed URL is a credential that exists nowhere else,
+so nothing in here deletes one in bulk. Remove feeds one at a time instead.
+
+The window sizes itself to your screen, so it fits a laptop and does not
+sprawl on a 4K panel.
 
 Feed URLs are masked, with a **Show** button per row. A Google iCal address is
 a bearer credential — anyone holding it can read that calendar indefinitely,
@@ -101,12 +116,14 @@ in `~/.config/hypr/hyprland.lua`:
 ```lua
 o.window(
   { class = "org\\.quickshell", title = "Clock, Zones & Calendar.*" },
-  { float = true, size = "900 760", center = true }
+  { float = true, center = true }
 )
 ```
 
 The title is matched as well as the class because every Quickshell window
 shares `org.quickshell`. Patterns are full-match, hence the trailing `.*`.
+No `size` — the window already sizes itself, and a percentage in that rule is
+silently ignored.
 
 The files below are still the source of truth, and hand-editing them works
 exactly as it always did.
@@ -142,6 +159,7 @@ The zones are configuration, not code. Edit this widget's entry in
 | `notifyUpcomingEvents` | `false` silences reminders. On by default when sync is on |
 | `notifyMinutesBefore` | `"staged"` (10m, 5m, 1m) or a single number of minutes |
 | `hour12` | Agenda times as 12-hour with AM/PM, or 24-hour. Unset follows your locale |
+| `weekStartDay` | `"monday"` or `"sunday"`. Unset follows your locale, which is what the stock clock does too |
 | `meetingHandler` | `"webapp"` (default) opens Zoom and Meet in their own window; `"browser"` always uses xdg-open |
 
 Notes:
@@ -159,7 +177,13 @@ is off.
 
 ### Setting it up
 
-Create `~/.config/omarchy/calendars.json` with your calendar link in it:
+**Click the gear in the popup, go to Calendars, and paste your link.** The
+window creates `~/.config/omarchy/calendars.json` for you the first time it
+opens, so there is no file to make and no restart to do. Sync switches itself
+on once a feed has a URL, and stays off while none does.
+
+If you would rather write the file yourself, it is a plain array and still
+works exactly as before:
 
 ```json
 [
@@ -172,9 +196,7 @@ Create `~/.config/omarchy/calendars.json` with your calendar link in it:
 ]
 ```
 
-Then `omarchy restart shell`. That is the whole setup — sync switches itself on
-once a feed is configured, and stays off while none is. Later edits to the file
-are picked up immediately, with no restart.
+Edits made by hand are picked up immediately, with no restart.
 
 **Where the link comes from:**
 
