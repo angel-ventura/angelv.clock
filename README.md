@@ -198,7 +198,8 @@ stacking — run one or the other.
 
 | In the panel | |
 | --- | --- |
-| Click a day | Show that day's agenda; click again to go back to today |
+| Click a day | Show that day's agenda |
+| Click the big date at the top | Back to today: the current month, and the agenda back on today. Live only when there is something to undo |
 | Calendar chips | Filter by calendar |
 | Refresh button | Sync now. Its tooltip shows when it last synced |
 | Click an event | Open it in Google Calendar, where you can edit or delete it |

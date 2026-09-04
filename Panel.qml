@@ -528,7 +528,7 @@ Panel {
   }
 
   function selectDate(dateKeyStr) {
-    root.selectedDateKey = (root.selectedDateKey === dateKeyStr) ? "" : dateKeyStr
+    root.selectedDateKey = dateKeyStr
   }
 
   function toggleCalendar(name) {
@@ -637,9 +637,19 @@ Panel {
     root.syncCalendars(false)
   }
 
+  // The month view only. The midnight rollover calls this to follow the date
+  // across a month boundary, and it has no business throwing away a day the
+  // reader deliberately picked.
   function goToToday() {
     root.viewYear = today.getFullYear()
     root.viewMonth = today.getMonth()
+  }
+
+  // What "back to today" means when a person asks for it: the current month,
+  // and the agenda back on today. The hero date, `t` and Enter all land here.
+  function backToToday() {
+    root.goToToday()
+    root.selectedDateKey = ""
   }
 
   function moveMonth(delta) {
@@ -763,7 +773,7 @@ Panel {
         if (dx !== 0) root.moveMonth(dx)
         if (dy !== 0) root.moveYear(dy)
       }
-      onActivateRequested: root.goToToday()
+      onActivateRequested: root.backToToday()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
@@ -771,7 +781,7 @@ Panel {
         else if (t === "]") root.moveMonth(1)
         else if (t === "{") root.moveYear(-1)
         else if (t === "}") root.moveYear(1)
-        else if (t === "t" || t === "T") root.goToToday()
+        else if (t === "t" || t === "T") root.backToToday()
         else if (t === "w" || t === "W") root.toggleWeekStart()
       }
 
@@ -839,10 +849,10 @@ Panel {
               y: heroRow.y
               width: heroRow.width
               height: heroRow.height
-              enabled: !root.viewingCurrentMonth
+              enabled: !root.viewingCurrentMonth || root.selectedDateKey !== ""
               hoverEnabled: enabled
               cursorShape: Qt.PointingHandCursor
-              onClicked: root.goToToday()
+              onClicked: root.backToToday()
 
               PanelToolTip {
                 visible: heroMouse.containsMouse
