@@ -20,10 +20,11 @@ Based on Omarchy's built-in `omarchy.clock` widget — see
   machine's real zone. You never list it yourself.
 - **A settings window.** Feeds, zones and every option have a gear in the
   popup rather than a JSON file to edit. See [Configure](#configure).
-- **Calendar sync, read-only and off by default.** Point it at Google's or
-  Apple's iCal link and the month grid gets event dots, with an agenda for the
-  day you click and optional reminders before a meeting. See
-  [Calendar sync](#calendar-sync).
+- **Calendar sync, read-only and off by default.** Point it at any `.ics` or
+  `webcal://` link — Google, Apple, Outlook, Proton, Nextcloud, Fastmail, or a
+  file on disk — and the month grid gets event dots, with an agenda for the day
+  you click and optional reminders before a meeting. Several at once, each with
+  its own colour. See [Calendar sync](#calendar-sync).
 
 Everything themes with Omarchy: there is no hardcoded colour in the plugin, every
 value goes through `Color.*`, `Style.*`, or `bar.foreground`.

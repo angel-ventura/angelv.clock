@@ -591,9 +591,10 @@ Item {
               width: parent.width
               wrapMode: Text.WordWrap
               textFormat: Text.PlainText
-              text: "A Google \"secret address in iCal format\", or an Apple published "
-                + "webcal:// link. Read-only — nothing here is written back to a "
-                + "calendar. The file is kept 0600 because the URL is a password."
+              text: "Any .ics or webcal:// link — a Google \"secret address in iCal "
+                + "format\", an Apple published calendar, Outlook, Proton, Nextcloud, or a "
+                + "file on disk. Read-only — nothing here is written back to a calendar. "
+                + "The file is kept 0600 because the URL is a password."
               color: Qt.darker(Color.foreground, 1.6)
               font.pixelSize: Style.font.bodySmall
             }
