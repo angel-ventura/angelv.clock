@@ -680,8 +680,17 @@ Item {
               }
             }
 
-            Dropdown {
-              label: "When to remind"
+            // Chips rather than a Dropdown, here and below. Ui/Dropdown pins
+            // its popup at trigger.height and never flips up, so one low in a
+            // panel simply draws its last options past the bottom edge where
+            // they cannot be picked. Chips lay out inside the card instead.
+            Text {
+              text: "When to remind"
+              color: Qt.darker(Color.foreground, 1.4)
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            ButtonGroup {
               value: String(root.setting("notifyMinutesBefore", "staged"))
               options: ["staged", "1", "5", "10", "15", "30", "60"]
               onChanged: function (v) { root.put("notifyMinutesBefore", v) }
@@ -698,8 +707,13 @@ Item {
               font.pixelSize: Style.font.bodySmall
             }
 
-            Dropdown {
-              label: "Open meetings and calendar links in"
+            Text {
+              text: "Open meetings and calendar links in"
+              color: Qt.darker(Color.foreground, 1.4)
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            ButtonGroup {
               value: String(root.setting("meetingHandler", "webapp"))
               options: ["webapp", "browser"]
               onChanged: function (v) { root.put("meetingHandler", v) }
@@ -721,8 +735,12 @@ Item {
               width: parent.width
               wrapMode: Text.WordWrap
               textFormat: Text.PlainText
-              text: "Your own zone is detected from the system and is never listed below. "
-                + "Rows sort by UTC offset, west to east, whatever order you add them in."
+              text: "Your own zone is detected from the system, so you never add it "
+                + "below — but you do get to name it. Whatever you type here is what the "
+                + "home row is labelled: \"Miami\" reads better than \"America/New_York\". "
+                + "Leave it empty and the row uses the zone's own name.\n\n"
+                + "The rows below sort by UTC offset, west to east, whatever order you "
+                + "add them in."
               color: Qt.darker(Color.foreground, 1.6)
               font.pixelSize: Style.font.bodySmall
             }
@@ -730,7 +748,7 @@ Item {
             TextField {
               width: body.width * 0.55
               text: String(root.setting("homeName", ""))
-              placeholderText: "Label for your own row"
+              placeholderText: "Name for your own row, e.g. Miami"
               onEditingFinished: root.put("homeName", text)
             }
 
@@ -760,6 +778,21 @@ Item {
             PanelSectionHeader {
               text: "ZONES"
               foreground: Color.foreground
+            }
+
+            // Above the list, not below it. SearchableDropdown pins its popup
+            // at trigger.height and never flips up, so at the foot of a list
+            // that grows with every zone added it would eventually open past
+            // the bottom of the window.
+            SearchableDropdown {
+              width: body.width * 0.62
+              label: "Add a zone"
+              triggerLabel: "Choose a time zone…"
+              value: ""
+              options: root.zoneList
+              placeholderText: "Search time zones…"
+              emptyText: "No matching zone"
+              onChanged: function (v) { root.addZone(v) }
             }
 
             Repeater {
@@ -798,17 +831,6 @@ Item {
                 }
               }
             }
-
-SearchableDropdown {
-              width: body.width * 0.62
-              label: "Add a zone"
-              triggerLabel: "Add a zone"
-              value: ""
-              options: root.zoneList
-              placeholderText: "Search time zones…"
-              emptyText: "No matching zone"
-              onChanged: function (v) { root.addZone(v) }
-            }
           }
 
           // ------------------------------------------------------- clock ---
@@ -822,8 +844,13 @@ SearchableDropdown {
               foreground: Color.foreground
             }
 
-            Dropdown {
-              label: "Agenda times"
+            Text {
+              text: "Agenda times"
+              color: Qt.darker(Color.foreground, 1.4)
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            ButtonGroup {
               value: root.isUnset("hour12") ? "follow locale"
                 : (root.setting("hour12", false) === true ? "12-hour" : "24-hour")
               options: ["follow locale", "12-hour", "24-hour"]
@@ -841,8 +868,13 @@ SearchableDropdown {
             // Stored as a weekday *name*, which is the form the popup's own
             // `w` toggle writes. coerceWeekStart() takes a number too, but two
             // spellings of one setting in one file is how they drift.
-            Dropdown {
-              label: "Week starts on"
+            Text {
+              text: "Week starts on"
+              color: Qt.darker(Color.foreground, 1.4)
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            ButtonGroup {
               value: {
                 var raw = String(root.setting("weekStartDay", "")).toLowerCase()
                 if (raw === "monday" || raw === "mon" || raw === "1") return "Monday"
