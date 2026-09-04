@@ -66,12 +66,9 @@ already ships with Omarchy:
 | --- | --- |
 | `date`, `timedatectl` | Zone offsets, and detecting your home zone |
 | `python3` | Fetching and parsing calendar feeds. Standard library only — no pip packages |
-| `wl-copy` | The copy-agenda button, nothing else |
-| `notify-send`, `xdg-open` | Reminders, and opening a meeting link |
+| `notify-send`, `xdg-open` | Reminders, and opening a meeting or calendar link |
 
 `python3` is guaranteed: Omarchy depends on `uwsm`, which depends on Python.
-`wl-clipboard` is not a hard package dependency, so on an unusually stripped
-system the copy button may do nothing; everything else still works.
 
 Calendar sync is the only part that touches the network, and only to GET the
 feed URLs you configure.
@@ -203,13 +200,22 @@ stacking — run one or the other.
 | --- | --- |
 | Click a day | Show that day's agenda; click again to go back to today |
 | Calendar chips | Filter by calendar |
-| Copy button, or `y` | Copy the day's agenda as Markdown checkboxes |
 | Refresh button | Sync now. Its tooltip shows when it last synced |
+| Click an event | Open it in Google Calendar, where you can edit or delete it |
 | Camera button on an event | Join a detected Meet / Zoom / Teams / Webex / Jitsi link. The tooltip names the host it will open |
 
-The three buttons sit in the agenda header and on each event row; hover any of
-them for a tooltip. (They are drawn with Nerd Font icons, which is why they are
+The two buttons sit in the agenda header and on each event row; hover either
+for a tooltip. (They are drawn with Nerd Font icons, which is why they are
 described in words here rather than shown.)
+
+Clicking an event is read-only on this side: it opens Google Calendar and
+leaves the editing to Google, so the widget still stores no credential and
+still never writes to a calendar. A Google feed carries no link back to its
+events, so the link is built from the event id in the feed and the calendar
+address in the feed URL; where an id is not one Google issued, the click falls
+back to that day's view. Feeds that are not Google's have no address to build
+from, and their rows are not clickable. Where the link opens follows the same
+`meetingHandler` setting as a join click.
 
 ### Reminders
 

@@ -17,6 +17,7 @@ import os
 import sys
 import json
 import re
+import base64
 import secrets
 import stat
 import threading
@@ -61,6 +62,7 @@ MAX_OUTPUT_JSON_BYTES = 12 * 1024 * 1024  # 12 MB limit for generated event stat
 MAX_TEXT_FIELD_CHARS = 500          # per-event title, location and calendar name
 MAX_ID_CHARS = 256                  # per-event id
 MAX_URL_CHARS = 2048                # per-event meeting URL
+MAX_EVENT_URL_CHARS = 512           # per-event link back to Google Calendar
 MAX_RECURRENCE_ITERATIONS = 2000    # CPU-work ceiling for expanding recurrence rules
 MAX_EXPANDED_INSTANCES = 500        # Maximum instances generated per recurring/multiday event
 # The caps above bound one VEVENT, not a whole feed. A 10 MB .ics is still
@@ -883,6 +885,64 @@ def expand_multiday_event(event, window_start, window_end):
     return instances if instances else [event]
 
 
+# ---- Google Calendar deep links --------------------------------------------
+#
+# A Google "secret address in iCal format" carries no link back to the event.
+# Measured on a real 251-event feed: two VEVENTs had a URL: property and both
+# pointed at a third-party booking site, not at Google. So the link is built
+# here instead of read from the feed.
+#
+# It can be built, because both halves are already on hand. A Google feed URL
+# is .../calendar/ical/<calendar id>/private-<token>/basic.ics, and each UID is
+# "<google event id>@google.com". Google's own "eid" is
+# base64(<event id> + " " + <calendar id>) with the padding stripped -- checked
+# against the eid Google itself hands out for the same event. The URL shape is
+# copied from that same link rather than invented, so the encoding of a "+" or
+# "/" in the base64 is the ordinary query-parameter one.
+#
+# Both halves are pattern-checked first. The event id arrives over the network,
+# and while base64 cannot break out of a URL, an unchecked one could still
+# address somebody else's calendar entry.
+
+GOOGLE_ICAL_RE = re.compile(
+    r"^https://calendar\.google\.com/calendar/ical/([^/]+)/", re.I)
+GOOGLE_CAL_ID_RE = re.compile(r"^[A-Za-z0-9._%+-]{1,128}@[A-Za-z0-9.-]{1,128}\.[A-Za-z]{2,24}$")
+# A base id is lowercase base32hex; one instance of a recurring series adds an
+# "_YYYYMMDD" or "_YYYYMMDDTHHMMSSZ" suffix, whose T and Z are upper case -- so
+# the id is matched as it arrives rather than case-folded first.
+GOOGLE_EVENT_ID_RE = re.compile(r"^[a-z0-9]{5,128}(?:_[0-9]{8}(?:T[0-9]{6}Z)?)?$")
+
+
+def google_calendar_id(raw_url):
+    """The calendar address embedded in a Google iCal feed URL, or ""."""
+    match = GOOGLE_ICAL_RE.match((raw_url or "").strip())
+    if not match:
+        return ""
+    cal_id = urllib.parse.unquote(match.group(1))
+    return cal_id if GOOGLE_CAL_ID_RE.match(cal_id) else ""
+
+
+def google_event_url(uid, cal_id):
+    """A link opening this exact event in Google Calendar, or ""."""
+    if not cal_id:
+        return ""
+    event_id = (uid or "").split("@")[0].strip()
+    if not GOOGLE_EVENT_ID_RE.match(event_id):
+        return ""
+    eid = base64.b64encode(
+        "{} {}".format(event_id, cal_id).encode("utf-8")).decode("ascii").rstrip("=")
+    return "https://www.google.com/calendar/event?eid=" + urllib.parse.quote(eid, safe="")
+
+
+def google_day_url(date_key):
+    """The Google Calendar day view for a YYYY-MM-DD key, or ""."""
+    parts = (date_key or "").split("-")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        return ""
+    year, month, day = (int(part) for part in parts)
+    return "https://calendar.google.com/calendar/u/0/r/day/{}/{}/{}".format(year, month, day)
+
+
 def parse_ics(content, cal_info, window_start, window_end, budget=None):
     """
     Parses an ICS file string into structured events within the time window.
@@ -896,6 +956,9 @@ def parse_ics(content, cal_info, window_start, window_end, budget=None):
     truncated = False
     in_vevent = False
     current = {}
+    # Resolved once per feed rather than per event: it is a regex over the
+    # feed's own URL and it cannot change mid-parse.
+    google_cal_id = google_calendar_id(cal_info.get("url", ""))
 
     for line in lines:
         if line == "BEGIN:VEVENT":
@@ -1011,6 +1074,11 @@ def parse_ics(content, cal_info, window_start, window_end, budget=None):
             "date_key": start_dt.strftime("%Y-%m-%d"),
             "meetingUrl": meeting_url or "",
             "meetingProvider": meeting_provider or "",
+            # Carried, not resolved, because expand_recurring_event clones an
+            # event with dict() -- a link built here would give every instance
+            # of a series the first occurrence's date. The link is built at
+            # output time, where the instance's own date is known.
+            "google_cal_id": google_cal_id,
             "rrule": raw.get("RRULE"),
             "exdates": raw.get("exdates", []),
         }
@@ -1181,6 +1249,14 @@ def sync_all_events():
             "startIso": evt["start_dt"].isoformat(),
             "meetingUrl": clip(evt.get("meetingUrl") or "", MAX_URL_CHARS),
             "meetingProvider": clip(evt.get("meetingProvider") or "", 64),
+            # Where clicking the row goes: the event itself when its id is
+            # well-formed, otherwise that day in Google Calendar. Only a Google
+            # feed gets either -- anything else has no address to build from,
+            # and its rows stay inert rather than guessing.
+            "eventUrl": clip(
+                (google_event_url(evt.get("id", ""), evt.get("google_cal_id", ""))
+                 or (google_day_url(d_key) if evt.get("google_cal_id") else "")),
+                MAX_EVENT_URL_CHARS),
         })
 
     for d_key in events_by_date:

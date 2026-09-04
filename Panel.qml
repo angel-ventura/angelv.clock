@@ -356,13 +356,6 @@ Panel {
 
   Process { id: notifyProc }
   Process { id: openUrlProc }
-  Process { id: copyProc }
-
-  Timer {
-    id: agendaCopiedTimer
-    interval: 2000
-    onTriggered: root.agendaCopied = false
-  }
 
   // Runs whether or not the popup is open — a reminder that only fired while
   // you were already looking at the calendar would be pointless.
@@ -530,8 +523,6 @@ Panel {
 
   readonly property var agendaEvents: Model.filterEvents(root.eventsByDate[root.agendaDateKey] || [], root.hiddenCalendars)
 
-  property bool agendaCopied: false
-
   function eventsOn(dateKeyStr) {
     return Model.filterEvents(root.eventsByDate[dateKeyStr] || [], root.hiddenCalendars)
   }
@@ -578,15 +569,15 @@ Panel {
     root.checkUpcomingNotifications()
   }
 
-  function copyAgenda() {
-    var md = Model.formatAgendaMarkdown(root.agendaEvents, root.agendaDateLabel)
-    if (!md) return
-    // wl-copy over a clipboard QML API because the panel is a layer surface
-    // and does not hold a seat's selection focus.
-    copyProc.command = ["wl-copy", "--", md]
-    copyProc.running = true
-    root.agendaCopied = true
-    agendaCopiedTimer.restart()
+  function openEvent(url) {
+    // Same shape as openMeeting, and deliberately the same handler setting:
+    // a calendar link and a call link are the same kind of click, and a second
+    // switch to find would be one too many.
+    var command = Model.calendarLaunchCommand(url, root.meetingHandler)
+    if (!command) return
+    openUrlProc.command = command
+    openUrlProc.running = true
+    root.close()
   }
 
   function openMeeting(url) {
@@ -639,7 +630,6 @@ Panel {
     // Same reasoning as the zones collapse: a day selected last time is not
     // what this open is about.
     root.selectedDateKey = ""
-    root.agendaCopied = false
     // A read on every open, not just a sync: the file watchers stop firing if
     // the state file is deleted rather than replaced in place, and an open is
     // the moment the contents actually have to be right.
@@ -783,7 +773,6 @@ Panel {
         else if (t === "}") root.moveYear(1)
         else if (t === "t" || t === "T") root.goToToday()
         else if (t === "w" || t === "W") root.toggleWeekStart()
-        else if (t === "y" || t === "Y") root.copyAgenda()
       }
 
       Flickable {
@@ -1356,19 +1345,6 @@ Panel {
 
                   PanelActionButton {
                     anchors.verticalCenter: parent.verticalCenter
-                    iconText: root.agendaCopied ? "󰄬" : "󰆏"
-                    tooltipText: root.agendaEvents.length > 0
-                      ? (root.agendaCopied ? "Copied" : "Copy agenda as Markdown (y)")
-                      : "Nothing to copy"
-                    foreground: root.agendaCopied ? Color.accent : root.contentForeground
-                    fontFamily: root.contentFontFamily
-                    enabled: root.agendaEvents.length > 0
-                    opacity: root.agendaEvents.length > 0 ? 1.0 : 0.4
-                    onClicked: root.copyAgenda()
-                  }
-
-                  PanelActionButton {
-                    anchors.verticalCenter: parent.verticalCenter
                     iconText: "󰑐"
                     tooltipText: root.syncing
                       ? "Syncing…"
@@ -1472,6 +1448,43 @@ Panel {
                   required property var modelData
                   width: agendaColumn.width
                   height: Math.max(eventRow.implicitHeight, Style.space(20))
+
+                  // Only a Google feed can produce a link, so a row from
+                  // anywhere else stays exactly as inert as it was.
+                  readonly property bool linked: String(eventItem.modelData.eventUrl || "") !== ""
+
+                  // Hover fill for the whole row. The negative margins let it
+                  // breathe past the text without moving anything: the row's
+                  // height is what spaces the agenda, and growing it here
+                  // would push the zones section down.
+                  Rectangle {
+                    anchors.fill: parent
+                    anchors.leftMargin: -Style.space(4)
+                    anchors.rightMargin: -Style.space(4)
+                    radius: Style.space(4)
+                    color: eventMouse.containsMouse
+                      ? Style.hoverFillFor(root.contentForeground, Color.accent)
+                      : "transparent"
+                  }
+
+                  // Declared before the Row on purpose. A later sibling paints
+                  // and handles input on top, so the join button inside the Row
+                  // keeps its own clicks and only the rest of the strip falls
+                  // through to here.
+                  MouseArea {
+                    id: eventMouse
+                    anchors.fill: parent
+                    enabled: eventItem.linked
+                    hoverEnabled: eventItem.linked
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.openEvent(eventItem.modelData.eventUrl)
+
+                    PanelToolTip {
+                      visible: eventMouse.containsMouse
+                      text: "Open in Google Calendar"
+                      fontFamily: root.contentFontFamily
+                    }
+                  }
 
                   Row {
                     id: eventRow

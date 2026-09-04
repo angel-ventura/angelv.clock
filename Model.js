@@ -593,26 +593,6 @@ function formatSelectedDateLabel(dateKeyStr, todayKeyStr, locale) {
   return (dayName + ", " + monthName + " " + d).toUpperCase()
 }
 
-// Markdown checkboxes, because the destination is a standup note or an
-// Obsidian daily page rather than a document.
-function formatAgendaMarkdown(events, selectedDateLabel) {
-  if (!events || events.length === 0) return ""
-  var lines = ["### Agenda \u2013 " + (selectedDateLabel || "Today")]
-  for (var i = 0; i < events.length; i++) {
-    var evt = events[i]
-    if (!evt) continue
-    var timeStr = evt.allDay ? "All Day" : (evt.startTime + (evt.endTime ? " \u2013 " + evt.endTime : ""))
-    var line = "- [ ] " + timeStr + " \u00b7 " + (evt.title || "Untitled Event")
-    if (evt.meetingProvider && evt.meetingUrl) {
-      line += " ([" + evt.meetingProvider + "](" + evt.meetingUrl + "))"
-    } else if (evt.location) {
-      line += " (" + evt.location + ")"
-    }
-    lines.push(line)
-  }
-  return lines.join("\n")
-}
-
 // Split a stored "HH:MM" into a display time and its meridiem, so the panel can
 // render "AM"/"PM" smaller and quieter than the digits rather than letting a
 // four-character suffix shout as loudly as the hour.
@@ -670,6 +650,20 @@ function meetingLaunchCommand(url, handler) {
     return ["omarchy-launch-webapp", link]
 
   return plain
+}
+
+// Where an agenda row goes when it is clicked. Unlike a meeting link this URL
+// is built by fetch-events.py rather than lifted out of a feed, but it still
+// reaches here through a file on disk, so the destination is checked again
+// rather than trusted: only Google Calendar's own two hosts are ever launched,
+// and requiring the "/" straight after the host means a credential-confusion
+// URL like https://www.google.com@example.com/ cannot match.
+function calendarLaunchCommand(url, handler) {
+  var link = String(url || "")
+  if (!/^https:\/\/(?:www\.google\.com\/calendar\/|calendar\.google\.com\/)/.test(link))
+    return null
+  if (String(handler || "webapp") === "browser") return ["xdg-open", link]
+  return ["omarchy-launch-webapp", link]
 }
 
 // Minutes from now until an ISO start stamp, negative once it has begun.
@@ -749,10 +743,10 @@ if (typeof module !== "undefined") {
     dayDotColors: dayDotColors,
     filterEvents: filterEvents,
     formatSelectedDateLabel: formatSelectedDateLabel,
-    formatAgendaMarkdown: formatAgendaMarkdown,
     minutesUntil: minutesUntil,
     notificationStage: notificationStage,
     meetingLaunchCommand: meetingLaunchCommand,
+    calendarLaunchCommand: calendarLaunchCommand,
     formatEventTime: formatEventTime
   }
 }
