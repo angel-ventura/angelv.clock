@@ -214,8 +214,12 @@ still never writes to a calendar. A Google feed carries no link back to its
 events, so the link is built from the event id in the feed and the calendar
 address in the feed URL; where an id is not one Google issued, the click falls
 back to that day's view. Feeds that are not Google's have no address to build
-from, and their rows are not clickable. Where the link opens follows the same
-`meetingHandler` setting as a join click.
+from, and their rows are not clickable.
+
+**Sign in to Google in Chromium first.** By default the event opens as an
+Omarchy web app, and those run in Chromium — a separate browser profile from
+your daily one, signed out until you sign in there once. See
+[Where a click lands](#where-a-click-lands).
 
 ### Reminders
 
@@ -226,28 +230,33 @@ never twice for the same event and stage.
 
 Set `"notifyUpcomingEvents": false` to silence them.
 
-### Where a join click lands
+### Where a click lands
 
 By default (`"meetingHandler": "webapp"`) a call opens in its own window rather
 than a browser tab. Camera and microphone permission is per-origin and sticks,
-and a real window can carry a Hyprland rule — a browser tab cannot.
+and a real window can carry a Hyprland rule — a browser tab cannot. Clicking an
+event to open it in Google Calendar follows the same setting.
 
-| Provider | Opens |
+| Click | Opens |
 | --- | --- |
 | Zoom | `zoommtg://`, which Omarchy's own handler turns into the web client. A natively installed Zoom claims that scheme first, which is better still |
-| Google Meet | The Meet web app, via `omarchy-launch-webapp` |
+| Google Meet | Its own window, via `omarchy-launch-webapp` |
+| An event | Google Calendar in its own window, same way |
 | Teams, Webex, Jitsi, anything else | Your default browser |
 
-Zoom already ships with Omarchy. Meet does not, so create it once — the easiest
-way is Omarchy's own menu:
+**You do not need to install a web app for any of this.**
+`omarchy-launch-webapp` is `chromium --app=<url>` and takes the address
+directly, so Meet and Google Calendar get their own window whether or not an
+entry exists. Creating one only adds it to the launcher with a name and an
+icon, which is worth doing for the ones you open by hand:
 
-**Super + Alt + Space → Install → Web App**, then give it the name `Google Meet`
-and the address `https://meet.google.com/`. It will ask for an icon; any image
-URL or an installed icon name works.
+**Super + Alt + Space → Install → Web App**, then a name and an address — say
+`Google Calendar` and `https://calendar.google.com/`. It will ask for an icon;
+any image URL or an installed icon name works.
 
-There is no need to do this at all — without a Meet web app, Meet links simply
-open in your browser, and everything else still works. Set
-`"meetingHandler": "browser"` to send every provider to the browser instead.
+What these windows *do* need is a signed-in Chromium: it is a separate browser
+profile, so sign in to Google there once. Set `"meetingHandler": "browser"` to
+send everything to your default browser instead.
 
 ## Hacking on it
 
