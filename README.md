@@ -67,7 +67,6 @@ already ships with Omarchy:
 | `date`, `timedatectl` | Zone offsets, and detecting your home zone |
 | `python3` | Fetching and parsing calendar feeds. Standard library only — no pip packages |
 | `notify-send`, `xdg-open` | Reminders, and opening a meeting or calendar link |
-| `hyprctl` | Reading your close-window key, to name it in the settings window. Optional — the hint just says "your close-window key" without it |
 
 `python3` is guaranteed: Omarchy depends on `uwsm`, which depends on Python.
 
@@ -80,10 +79,10 @@ feed URLs you configure.
 covering everything below — calendar feeds, zones, and the clock's own options
 — so none of it needs a text editor.
 
-It is a real window rather than a panel inside the popup: the popup is capped
-to the width of the month grid, which is nowhere to put a searchable zone
-picker or a pasted iCal URL. Every control writes as you change it; the popup
-picks the change up the next time you open it.
+It opens as its own panel over the desktop rather than inside the popup: the
+popup is capped to the width of the month grid, which is nowhere to put a
+searchable zone picker or a pasted iCal URL. Every control writes as you
+change it; the popup picks the change up the next time you open it.
 
 | Tab | |
 | --- | --- |
@@ -96,34 +95,22 @@ confirmation naming what goes. On the Calendars tab it resets the sync options
 and **keeps your feeds** — a feed URL is a credential that exists nowhere else,
 so nothing in here deletes one in bulk. Remove feeds one at a time instead.
 
-The window sizes itself to your screen, so it fits a laptop and does not
-sprawl on a 4K panel.
+It sizes itself to the screen it opens on, so it fits a laptop and does not
+sprawl on a 4K panel, and on two monitors it opens on the focused one.
 
 Feed URLs are masked, with a **Show** button per row. A Google iCal address is
 a bearer credential — anyone holding it can read that calendar indefinitely,
 without signing in — so it should not be sitting in plain text on a screen you
 might share or screenshot.
 
-Escape closes it, and so does your close-window key — it is a real window, not
-an overlay drawn on top of your desktop, so the window manager treats it like
-any other application. That is the reason it is a window: an overlay would
-have your close-window key hit whatever is *behind* it instead, which is a
-habit worth not teaching.
+Escape closes it, and so does a click outside it. There is nothing to
+configure to make it appear centred: it is drawn over the desktop the way the
+rest of Omarchy's settings surfaces are, not opened as an application window
+that your tiling layout would have to be told about.
 
-Being a real window, Hyprland tiles it by default. To have it float, put this
-in `~/.config/hypr/hyprland.lua`:
-
-```lua
-o.window(
-  { class = "org\\.quickshell", title = "Clock, Zones & Calendar.*" },
-  { float = true, center = true }
-)
-```
-
-The title is matched as well as the class because every Quickshell window
-shares `org.quickshell`. Patterns are full-match, hence the trailing `.*`.
-No `size` — the window already sizes itself, and a percentage in that rule is
-silently ignored.
+The trade is that it is not a window, so a close-window keybind acts on
+whatever real window is behind it. Nothing in here suggests otherwise — Escape
+and clicking outside are what it offers, and what the footer names.
 
 The files below are still the source of truth, and hand-editing them works
 exactly as it always did.

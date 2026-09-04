@@ -6,6 +6,7 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -57,8 +58,13 @@ Item {
   // that the key works on it -- so it is worth getting right rather than
   // guessing. Empty until read, and the footer says "your close-window key"
   // until then.
-  property string closeKeyLabel: ""
   property string tab: "calendars"
+
+  // Fixed when the overlay opens, not bound -- see the screen note on the
+  // PanelWindow below.
+  property var openedOn: null
+  property int cardWidth: 760
+  property int cardHeight: 700
 
   // Nothing is written while this is false.
   //
@@ -78,25 +84,35 @@ Item {
 
   // Fitted to the screen it is about to open on, before it opens.
   function sizeWindow() {
-    var screen = (Quickshell.screens && Quickshell.screens.length > 0)
-      ? Quickshell.screens[0] : null
+    var screen = null
+    if (Quickshell.screens && Quickshell.screens.length > 0) {
+      // The focused screen where the shell can name one, so a second monitor
+      // does not get the settings it did not ask for.
+      screen = Quickshell.screens[0]
+      for (var i = 0; i < Quickshell.screens.length; i++) {
+        if (Quickshell.screens[i] && Quickshell.screens[i].focused) {
+          screen = Quickshell.screens[i]
+          break
+        }
+      }
+    }
+    root.openedOn = screen
     var sw = screen && screen.width > 0 ? screen.width : 1920
     var sh = screen && screen.height > 0 ? screen.height : 1080
-    window.implicitWidth = Math.max(520, Math.min(900, Math.round(sw * 0.42)))
+    root.cardWidth = Math.max(520, Math.min(900, Math.round(sw * 0.42)))
     // 0.62 left the Calendars tab 14px short of fitting two feeds on a
     // 2048x1152 desktop -- a common enough size to be worth clearing outright
     // rather than making people scroll for the last control.
-    window.implicitHeight = Math.max(420, Math.min(880, Math.round(sh * 0.68)))
+    root.cardHeight = Math.max(420, Math.min(880, Math.round(sh * 0.68)))
   }
 
   function open(payloadJson) {
     root.ready = false
-    root.sizeWindow()
     root.closingFromHost = false
+    root.sizeWindow()
     root.loadEntry()
     root.loadCalendars()
     if (root.zoneList.length === 0) zoneListProc.running = true
-    if (root.closeKeyLabel === "") bindsProc.running = true
     window.visible = true
     settleTimer.restart()
   }
@@ -104,8 +120,11 @@ Item {
   function close() {
     root.ready = false
     settleTimer.stop()
-    root.closingFromHost = true
     window.visible = false
+    // No window manager closes this one, so the host has to be told that the
+    // panel is down or it will believe it is still open.
+    if (!root.closingFromHost && root.shell && typeof root.shell.hide === "function")
+      root.shell.hide(root.widgetId)
   }
 
   Timer {
@@ -301,44 +320,6 @@ Item {
     }
   }
 
-  // Omarchy routes its binds through a Lua dispatcher, so a bind cannot be
-  // found by looking for the killactive dispatcher -- but it carries the
-  // human-readable description the bind was declared with, and Omarchy's is
-  // "Close window". A rebind keeps that description; anything else falls back.
-  Process {
-    id: bindsProc
-    property string buffer: ""
-    command: ["hyprctl", "binds", "-j"]
-    stdout: SplitParser {
-      splitMarker: ""
-      onRead: function (data) { bindsProc.buffer += data }
-    }
-    onExited: function (code, status) {
-      var label = ""
-      try {
-        var binds = JSON.parse(bindsProc.buffer)
-        for (var i = 0; i < binds.length; i++) {
-          if (String(binds[i].description || "").toLowerCase() !== "close window") continue
-          // Hyprland's modmask is the Wayland one: shift 1, ctrl 4, alt 8,
-          // super 64. Anything else is not worth naming in a hint.
-          var mods = []
-          var mask = Number(binds[i].modmask) || 0
-          if (mask & 64) mods.push("Super")
-          if (mask & 4) mods.push("Ctrl")
-          if (mask & 8) mods.push("Alt")
-          if (mask & 1) mods.push("Shift")
-          var key = String(binds[i].key || "")
-          if (!key) continue
-          if (key.length === 1) key = key.toUpperCase()
-          mods.push(key)
-          label = mods.join("+")
-          break
-        }
-      } catch (e) { /* no hyprctl, or a shape we do not know: fall back */ }
-      root.closeKeyLabel = label
-    }
-  }
-
   Process {
     id: zoneListProc
     property string buffer: ""
@@ -360,36 +341,63 @@ Item {
 
   // ---- window -------------------------------------------------------------
 
-  FloatingWindow {
+  // A layer-shell overlay rather than a toplevel window.
+  //
+  // A real window cannot float itself: there is no Wayland request for it, and
+  // Hyprland decides placement, so a toplevel tiles until somebody writes a
+  // window rule. A plugin cannot ship one -- everybody installing this would
+  // get a tiled settings panel until they read the README and edited their
+  // Hyprland config. An overlay is centred over the desktop by construction,
+  // needs no configuration at all, and is what every other settings surface on
+  // this desktop already is.
+  //
+  // The cost is that this is not a window, so a close-window keybind acts on
+  // whatever real window is behind it. Nothing here claims otherwise: Escape
+  // and a click outside both close it, and the footer says exactly that.
+  PanelWindow {
     id: window
-    title: "Clock, Zones & Calendar — Settings"
-    color: Color.background
+    visible: false
+    // A layer surface given no screen goes to the first one, which on two
+    // monitors is not necessarily the one being looked at. Fixed at open time
+    // rather than bound, so it cannot hop mid-read.
+    screen: root.openedOn !== null ? root.openedOn : null
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    WlrLayershell.namespace: "angelv-clock-settings"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    exclusionMode: ExclusionMode.Ignore
 
-    // Sized from the screen rather than fixed, so this is not a window that
-    // only fits the machine it was written on. Clamped at both ends: small
-    // enough for a 768px laptop with a bar on it, and not so wide on a 4K
-    // panel that a form of short rows is stretched across it.
-    //
-    // Assigned in open() before the window is shown rather than bound, so it
-    // maps at its final size and a compositor centring rule has the real size
-    // to work from.
-    //
-    // Screen dimensions come back in logical pixels, so this is already
-    // correct on a scaled display: a 2560x1440 panel at scale 1.25 reports
-    // 2048x1152 and gets a window sized for what the user actually sees.
-    //
-    // Deliberately not left to a Hyprland `size` rule: a percentage there is
-    // silently ignored, with no configerror to say so, and a plugin should fit
-    // the screen without anyone writing a window rule first.
-    implicitWidth: 760
-    implicitHeight: 700
-    minimumSize: Qt.size(520, 420)
-
-    onVisibleChanged: {
-      if (!visible && !root.closingFromHost && root.shell
-          && typeof root.shell.hide === "function")
-        root.shell.hide(root.widgetId)
+    // Dimming what is behind says the settings are in front of it, and gives
+    // the click-outside-to-close target somewhere to live.
+    Rectangle {
+      anchors.fill: parent
+      color: Qt.rgba(0, 0, 0, 0.45)
     }
+
+    MouseArea {
+      anchors.fill: parent
+      onClicked: root.close()
+    }
+
+    Rectangle {
+      id: card
+      anchors.centerIn: parent
+      // Sized from the screen it opened on, so this is not a panel that only
+      // fits the machine it was written on. Clamped at both ends: small enough
+      // for a 768px laptop with a bar on it, and not so wide on a 4K panel
+      // that a form of short rows is stretched across it. Screen dimensions
+      // come back in logical pixels, so a 2560x1440 display at scale 1.25
+      // reports 2048x1152 and gets a card sized for what its owner sees.
+      width: root.cardWidth
+      height: root.cardHeight
+      color: Color.background
+      radius: Style.cornerRadius
+      border.width: Style.spacing.hairline
+      border.color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.18)
+
+      // The card is not the scrim: a click that lands on it stays on it.
+      MouseArea { anchors.fill: parent }
 
     ConfirmDialog {
       id: resetDialog
@@ -488,10 +496,9 @@ Item {
         foreground: Color.foreground
       }
 
-      // A real window, so Super+Q closes this and not whatever is behind it.
-      // Said out loud because the alternative -- a layer-shell overlay, which
-      // is what most shell settings panels are -- gets that wrong, and the
-      // habit it teaches is hard to unlearn.
+      // Names only what actually works here. This is an overlay, so a
+      // close-window keybind would act on the window behind it -- mentioning
+      // one would teach exactly the wrong reflex.
       // Scroll indicator. A tab taller than the window is normal -- the
       // Calendars tab already is with two feeds in it -- and without this the
       // last control simply looks cut off with nothing to say it can be
@@ -532,8 +539,7 @@ Item {
         Text {
           anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
-          text: "Esc or " + (root.closeKeyLabel !== "" ? root.closeKeyLabel : "your close-window key")
-            + " closes this window · changes save as you make them"
+          text: "Esc or a click outside closes this · changes save as you make them"
           color: Qt.darker(Color.foreground, 1.9)
           font.pixelSize: Style.font.caption
         }
@@ -956,6 +962,7 @@ Item {
           }
         }
       }
+    }
     }
   }
 }
