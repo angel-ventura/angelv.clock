@@ -400,7 +400,14 @@ Item {
           : "Reset calendar settings?\n\nSync interval, reminders and where links open go "
             + "back to their defaults. Your calendar feeds are kept — remove those one at a time.")
       confirmText: "Reset"
-      onConfirmed: root.resetCurrentTab()
+      // ConfirmDialog reports the choice and nothing else: `opened` is the
+      // caller's to clear. Without these it stays on screen whichever button
+      // is pressed, and looks frozen.
+      onConfirmed: {
+        resetDialog.opened = false
+        root.resetCurrentTab()
+      }
+      onCanceled: resetDialog.opened = false
     }
 
     FocusScope {
@@ -409,6 +416,12 @@ Item {
       focus: true
 
       Keys.onPressed: function (event) {
+        // A dialog on screen gets the keyboard first -- Escape there means
+        // "cancel this", not "close the window out from under it".
+        if (resetDialog.opened) {
+          if (resetDialog.handleKey(event)) event.accepted = true
+          return
+        }
         if (event.key === Qt.Key_Escape) {
           root.close()
           event.accepted = true
@@ -468,6 +481,37 @@ Item {
       // Said out loud because the alternative -- a layer-shell overlay, which
       // is what most shell settings panels are -- gets that wrong, and the
       // habit it teaches is hard to unlearn.
+      // Scroll indicator. A tab taller than the window is normal -- the
+      // Calendars tab already is with two feeds in it -- and without this the
+      // last control simply looks cut off with nothing to say it can be
+      // reached. Drawn rather than an attached ScrollBar, which never rendered
+      // here whatever policy it was given.
+      Rectangle {
+        readonly property bool needed: scroll.contentHeight > scroll.height
+        readonly property real trackHeight: scroll.height
+        visible: needed
+        width: Style.space(4)
+        radius: width / 2
+        anchors.right: scroll.right
+        color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.3)
+        height: needed
+          ? Math.max(Style.space(24), trackHeight * (scroll.height / scroll.contentHeight))
+          : 0
+        y: needed
+          ? scroll.y + (trackHeight - height)
+            * Math.max(0, Math.min(1, scroll.contentY / (scroll.contentHeight - scroll.height)))
+          : scroll.y
+      }
+
+      // A rule above the footer, so the scrolling area visibly ends rather
+      // than the last control appearing to run out of room.
+      PanelSeparator {
+        anchors.bottom: footer.top
+        anchors.bottomMargin: Style.space(8)
+        width: parent.width
+        foreground: Color.foreground
+      }
+
       Row {
         id: footer
         anchors.bottom: parent.bottom
@@ -491,7 +535,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: footer.top
-        anchors.bottomMargin: Style.space(10)
+        anchors.bottomMargin: Style.space(12)
         contentWidth: width
         contentHeight: body.height
         clip: true
@@ -499,8 +543,11 @@ Item {
 
         Column {
           id: body
-          width: scroll.width
+          width: scroll.width - Style.space(10)
           spacing: Style.space(14)
+          // The footer is a fixed strip below this. Without a tail the last
+          // control in a tab ends hard against it and reads as cut off.
+          bottomPadding: Style.space(10)
 
           // --------------------------------------------------- calendars ---
           Column {
@@ -571,7 +618,17 @@ Item {
                       width: calBody.width * 0.22
                       text: String(calRow.modelData.color || "#4A90E2")
                       placeholderText: "#RRGGBB"
-                      onEditingFinished: root.mutateCalendar(calRow.index, "color", text)
+                      // Only a colour QML can parse is saved. An unparseable
+                      // one reaches the popup as a chip and an event rule
+                      // colour, where it is a warning per repaint rather than
+                      // anything visible here -- so the field snaps back to
+                      // the saved value instead of writing it.
+                      onEditingFinished: {
+                        if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(text))
+                          root.mutateCalendar(calRow.index, "color", text)
+                        else
+                          text = String(calRow.modelData.color || "#4A90E2")
+                      }
                     }
 
                     // The swatch reads the field as it is typed, not the saved
@@ -735,12 +792,8 @@ Item {
               width: parent.width
               wrapMode: Text.WordWrap
               textFormat: Text.PlainText
-              text: "Your own zone is detected from the system, so you never add it "
-                + "below — but you do get to name it. Whatever you type here is what the "
-                + "home row is labelled: \"Miami\" reads better than \"America/New_York\". "
-                + "Leave it empty and the row uses the zone's own name.\n\n"
-                + "The rows below sort by UTC offset, west to east, whatever order you "
-                + "add them in."
+              text: "Your own zone is detected automatically. Give it a label if you "
+                + "want the row named something other than the zone itself."
               color: Qt.darker(Color.foreground, 1.6)
               font.pixelSize: Style.font.bodySmall
             }
@@ -748,7 +801,7 @@ Item {
             TextField {
               width: body.width * 0.55
               text: String(root.setting("homeName", ""))
-              placeholderText: "Name for your own row, e.g. Miami"
+              placeholderText: "Label (optional)"
               onEditingFinished: root.put("homeName", text)
             }
 
