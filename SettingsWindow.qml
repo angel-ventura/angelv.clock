@@ -384,6 +384,10 @@ Item {
     ConfirmDialog {
       id: resetDialog
       anchors.fill: parent
+      // Declared before the content it covers, so it needs to say it belongs
+      // on top. Without this the settings UI paints over the dialog and the
+      // card reads as transparent -- the rows behind show straight through it.
+      z: 100
       // Each message says what survives as well as what goes. The calendars
       // one matters most: the feed list is not settings, it is a credential
       // that exists nowhere else, so no button in here deletes it.
