@@ -52,6 +52,16 @@ Item {
   property var zoneList: []
   property string tab: "calendars"
 
+  // Nothing is written while this is false.
+  //
+  // The shell's controls emit their change signal while their bindings settle,
+  // not only when a person moves them -- opening the window once wrote
+  // weekStartDay and lifeExpectancy that nobody had chosen. A settings window
+  // that edits the config by being looked at is worse than no settings window,
+  // so writes are gated until the tree has stopped moving, and put() ignores a
+  // value that already matches what is stored.
+  property bool ready: false
+
   readonly property string pluginDir: {
     var url = String(Qt.resolvedUrl("."))
     var path = url.indexOf("file://") === 0 ? url.substring(7) : url
@@ -59,16 +69,26 @@ Item {
   }
 
   function open(payloadJson) {
+    root.ready = false
     root.closingFromHost = false
     root.loadEntry()
     root.loadCalendars()
     if (root.zoneList.length === 0) zoneListProc.running = true
     window.visible = true
+    settleTimer.restart()
   }
 
   function close() {
+    root.ready = false
+    settleTimer.stop()
     root.closingFromHost = true
     window.visible = false
+  }
+
+  Timer {
+    id: settleTimer
+    interval: 400
+    onTriggered: root.ready = true
   }
 
   // ---- shell.json ---------------------------------------------------------
@@ -100,6 +120,10 @@ Item {
   }
 
   function put(name, value) {
+    if (!root.ready) return
+    // A control that re-emits its current value has nothing to say.
+    var current = root.entry ? root.entry[name] : undefined
+    if (JSON.stringify(current) === JSON.stringify(value)) return
     var next = JSON.parse(JSON.stringify(root.entry || {}))
     if (value === undefined) delete next[name]
     else next[name] = value
@@ -117,6 +141,7 @@ Item {
   }
 
   function saveCalendars(next) {
+    if (!root.ready) return
     root.calendars = next
     saveConfigProc.running = true
   }
@@ -139,6 +164,23 @@ Item {
     if (index < 0 || index >= next.length) return
     next.splice(index, 1)
     root.saveCalendars(next)
+  }
+
+  // Clears the keys one tab owns, and nothing else. There is deliberately no
+  // reset for the calendars: a feed URL is a secret that exists nowhere else
+  // once this file is gone, and "reset" is not a word anyone reads carefully
+  // enough to risk that on.
+  readonly property var clockKeys: ["hour12", "weekStartDay", "mementoMori", "birthYear", "lifeExpectancy"]
+  readonly property var zoneKeys: ["zones", "homeName", "homeHour12"]
+
+  function resetKeys(keys) {
+    if (!root.ready) return
+    var next = JSON.parse(JSON.stringify(root.entry || {}))
+    for (var i = 0; i < keys.length; i++) delete next[keys[i]]
+    next.id = root.widgetId
+    root.entry = next
+    if (root.shell && typeof root.shell.updateEntryInline === "function")
+      root.shell.updateEntryInline(root.widgetId, next)
   }
 
   // ---- zones --------------------------------------------------------------
@@ -252,9 +294,35 @@ Item {
         root.shell.hide(root.widgetId)
     }
 
-    Item {
+    ConfirmDialog {
+      id: clockResetDialog
+      anchors.fill: parent
+      message: "Reset clock settings?\n\nAgenda times, week start and memento mori "
+        + "go back to their defaults. Your zones and calendars are not touched."
+      confirmText: "Reset"
+      onConfirmed: root.resetKeys(root.clockKeys)
+    }
+
+    ConfirmDialog {
+      id: zoneResetDialog
+      anchors.fill: parent
+      message: "Reset zone settings?\n\nRemoves every zone you have added, along "
+        + "with your home label. Your calendars are not touched."
+      confirmText: "Reset"
+      onConfirmed: root.resetKeys(root.zoneKeys)
+    }
+
+    FocusScope {
       anchors.fill: parent
       anchors.margins: Style.space(16)
+      focus: true
+
+      Keys.onPressed: function (event) {
+        if (event.key === Qt.Key_Escape) {
+          root.close()
+          event.accepted = true
+        }
+      }
 
       Row {
         id: tabRow
@@ -288,13 +356,33 @@ Item {
         foreground: Color.foreground
       }
 
+      // A real window, so Super+Q closes this and not whatever is behind it.
+      // Said out loud because the alternative -- a layer-shell overlay, which
+      // is what most shell settings panels are -- gets that wrong, and the
+      // habit it teaches is hard to unlearn.
+      Row {
+        id: footer
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        spacing: Style.space(8)
+
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          textFormat: Text.PlainText
+          text: "Esc or Super+Q closes this window · changes save as you make them"
+          color: Qt.darker(Color.foreground, 1.9)
+          font.pixelSize: Style.font.caption
+        }
+      }
+
       Flickable {
         id: scroll
         anchors.top: tabRule.bottom
         anchors.topMargin: Style.space(12)
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: parent.bottom
+        anchors.bottom: footer.top
+        anchors.bottomMargin: Style.space(10)
         contentWidth: width
         contentHeight: body.height
         clip: true
@@ -464,6 +552,17 @@ Item {
               onChanged: function (v) { root.put("notifyMinutesBefore", v) }
             }
 
+            Text {
+              width: parent.width
+              wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
+              text: "\"staged\" nudges three times — 10, 5 and 1 minutes before. "
+                + "A number nudges once, that many minutes before. Either way each "
+                + "event notifies once per stage, and all-day events never do."
+              color: Qt.darker(Color.foreground, 1.6)
+              font.pixelSize: Style.font.bodySmall
+            }
+
             Dropdown {
               label: "Open meetings and calendar links in"
               value: String(root.setting("meetingHandler", "webapp"))
@@ -565,6 +664,12 @@ Item {
               }
             }
 
+            Button {
+              text: "Reset zone settings"
+              bordered: true
+              onClicked: zoneResetDialog.opened = true
+            }
+
             SearchableDropdown {
               width: body.width * 0.62
               label: "Add a zone"
@@ -634,20 +739,30 @@ Item {
               }
             }
 
-            NumberField {
-              label: "Birth year (0 hides the bar)"
-              value: root.setting("birthYear", 0)
-              from: 0
-              to: 2200
-              onModified: function (v) { root.put("birthYear", v) }
+            // Deliberately no birth year or life expectancy here. Double-tap
+            // the year bar in the popup and it asks for both in place -- that
+            // gesture is inherited from the stock clock, and a second way to
+            // set the same two numbers would only be a way for them to
+            // disagree.
+            Text {
+              width: parent.width
+              wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
+              text: "Double-tap the year bar in the popup to set your birth year "
+                + "and life expectancy. The bar stays hidden until a birth year is set."
+              color: Qt.darker(Color.foreground, 1.6)
+              font.pixelSize: Style.font.bodySmall
             }
 
-            NumberField {
-              label: "Life expectancy in years"
-              value: root.setting("lifeExpectancy", 80)
-              from: 1
-              to: 150
-              onModified: function (v) { root.put("lifeExpectancy", v) }
+            PanelSeparator {
+              width: parent.width
+              foreground: Color.foreground
+            }
+
+            Button {
+              text: "Reset clock settings"
+              bordered: true
+              onClicked: clockResetDialog.opened = true
             }
           }
         }
