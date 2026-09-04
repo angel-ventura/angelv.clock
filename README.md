@@ -75,6 +75,23 @@ feed URLs you configure.
 
 ## Configure
 
+**Click the gear in the top right of the popup.** It opens a settings window
+covering everything below — calendar feeds, zones, and the clock's own options
+— so none of it needs a text editor.
+
+It is a real window rather than a panel inside the popup: the popup is capped
+to the width of the month grid, which is nowhere to put a searchable zone
+picker or a pasted iCal URL. Every control writes as you change it; the popup
+picks the change up the next time you open it.
+
+Feed URLs are masked, with a **Show** button per row. A Google iCal address is
+a bearer credential — anyone holding it can read that calendar indefinitely,
+without signing in — so it should not be sitting in plain text on a screen you
+might share or screenshot.
+
+The files below are still the source of truth, and hand-editing them works
+exactly as it always did.
+
 The zones are configuration, not code. Edit this widget's entry in
 `~/.config/omarchy/shell.json`:
 

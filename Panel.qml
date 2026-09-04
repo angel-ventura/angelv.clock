@@ -578,6 +578,16 @@ Panel {
     root.checkUpcomingNotifications()
   }
 
+  function openSettings() {
+    // The settings window is this plugin's other entry point ("panel"), so the
+    // shell owns it, not this popup -- the same shell object persistSettings()
+    // already writes through. No subprocess, and nothing to keep in step: the
+    // window reads the files rather than this instance's state.
+    if (root.bar && root.bar.shell && typeof root.bar.shell.summon === "function")
+      root.bar.shell.summon("angelv.clock", "{}")
+    root.close()
+  }
+
   function newEventOnSelectedDay() {
     root.openEvent(Model.googleNewEventUrl(root.agendaDateKey))
   }
@@ -821,6 +831,20 @@ Panel {
           Item {
             width: parent.width
             height: heroRow.height
+
+            // Top-right of the popup rather than in the agenda header: that
+            // row belongs to the calendar, and this window also covers zones
+            // and the clock itself.
+            PanelActionButton {
+              anchors.right: parent.right
+              anchors.top: parent.top
+              iconText: "󰒓"
+              tooltipText: "Settings"
+              foreground: root.contentForeground
+              hoverColor: Color.accent
+              fontFamily: root.contentFontFamily
+              onClicked: root.openSettings()
+            }
 
             Row {
               id: heroRow

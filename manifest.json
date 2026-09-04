@@ -2,14 +2,16 @@
   "schemaVersion": 1,
   "id": "angelv.clock",
   "name": "Clock, Zones & Calendar",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "author": "Angel Ventura",
   "description": "Date/time label with a calendar popup, a time-zone converter, and read-only Google / Apple calendar sync",
   "kinds": [
-    "bar-widget"
+    "bar-widget",
+    "panel"
   ],
   "entryPoints": {
-    "barWidget": "BarWidget.qml"
+    "barWidget": "BarWidget.qml",
+    "panel": "SettingsWindow.qml"
   },
   "barWidget": {
     "displayName": "Clock, Zones & Calendar",
