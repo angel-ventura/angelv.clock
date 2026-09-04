@@ -382,7 +382,13 @@ Item {
 
     Rectangle {
       id: card
-      anchors.centerIn: parent
+      // Centred by arithmetic rather than by anchors.centerIn, which will
+      // happily land on a half pixel: an odd difference between the screen and
+      // the card puts every hairline inside it across two physical pixels, and
+      // on a fractional-scale display the one on the clip edge is dropped
+      // rather than blurred. The feed boxes lost their left border to that.
+      x: Math.round((parent.width - width) / 2)
+      y: Math.round((parent.height - height) / 2)
       // Sized from the screen it opened on, so this is not a panel that only
       // fits the machine it was written on. Clamped at both ends: small enough
       // for a 768px laptop with a bar on it, and not so wide on a 4K panel
@@ -560,7 +566,11 @@ Item {
 
         Column {
           id: body
-          width: scroll.width - Style.space(10)
+          // Inset from the clip on both sides: a border drawn exactly on a
+          // Flickable's clip edge is a coin toss, and the right side already
+          // gives up room to the scroll indicator anyway.
+          x: Style.space(2)
+          width: scroll.width - Style.space(12)
           spacing: Style.space(14)
           // The footer is a fixed strip below this. Without a tail the last
           // control in a tab ends hard against it and reads as cut off.
