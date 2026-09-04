@@ -89,6 +89,25 @@ a bearer credential — anyone holding it can read that calendar indefinitely,
 without signing in — so it should not be sitting in plain text on a screen you
 might share or screenshot.
 
+Escape closes it, and so does your close-window key — it is a real window, not
+an overlay drawn on top of your desktop, so the window manager treats it like
+any other application. That is the reason it is a window: an overlay would
+have your close-window key hit whatever is *behind* it instead, which is a
+habit worth not teaching.
+
+Being a real window, Hyprland tiles it by default. To have it float, put this
+in `~/.config/hypr/hyprland.lua`:
+
+```lua
+o.window(
+  { class = "org\\.quickshell", title = "Clock, Zones & Calendar.*" },
+  { float = true, size = "900 760", center = true }
+)
+```
+
+The title is matched as well as the class because every Quickshell window
+shares `org.quickshell`. Patterns are full-match, hence the trailing `.*`.
+
 The files below are still the source of truth, and hand-editing them works
 exactly as it always did.
 
