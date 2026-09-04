@@ -63,7 +63,7 @@ Item {
   //
   // The shell's controls emit their change signal while their bindings settle,
   // not only when a person moves them -- opening the window once wrote
-  // weekStartDay and lifeExpectancy that nobody had chosen. A settings window
+  // settings that nobody had chosen. A settings window
   // that edits the config by being looked at is worse than no settings window,
   // so writes are gated until the tree has stopped moving, and put() ignores a
   // value that already matches what is stored.
@@ -178,7 +178,7 @@ Item {
   // reset for the calendars: a feed URL is a secret that exists nowhere else
   // once this file is gone, and "reset" is not a word anyone reads carefully
   // enough to risk that on.
-  readonly property var clockKeys: ["hour12", "weekStartDay", "mementoMori", "birthYear", "lifeExpectancy"]
+  readonly property var clockKeys: ["hour12", "weekStartDay"]
   readonly property var zoneKeys: ["zones", "homeName", "homeHour12"]
   readonly property var calendarKeys: ["syncIntervalMinutes", "notifyUpcomingEvents",
     "notifyMinutesBefore", "meetingHandler"]
@@ -192,7 +192,7 @@ Item {
   readonly property string resetHint: root.tab === "clock"
     ? "Reset the clock settings on this tab"
     : (root.tab === "zones" ? "Reset the zone settings on this tab"
-                            : "Reset the sync settings on this tab — your feeds are kept")
+                            : "Reset the calendar settings on this tab — your feeds are kept")
 
   function resetKeys(keys) {
     if (!root.ready) return
@@ -360,13 +360,13 @@ Item {
       // one matters most: the feed list is not settings, it is a credential
       // that exists nowhere else, so no button in here deletes it.
       message: root.tab === "clock"
-        ? "Reset clock settings?\n\nAgenda times, week start and memento mori go back "
-          + "to their defaults. Your zones and calendars are not touched."
+        ? "Reset clock settings?\n\nAgenda times and week start go back to their "
+          + "defaults. Your zones and calendars are not touched."
         : (root.tab === "zones"
           ? "Reset zone settings?\n\nRemoves every zone you have added, along with your "
             + "home label. Your calendars are not touched."
-          : "Reset sync settings?\n\nSync interval, reminders and where links open go back "
-            + "to their defaults. Your calendar feeds are kept — remove those one at a time.")
+          : "Reset calendar settings?\n\nSync interval, reminders and where links open go "
+            + "back to their defaults. Your calendar feeds are kept — remove those one at a time.")
       confirmText: "Reset"
       onConfirmed: root.resetCurrentTab()
     }
@@ -822,49 +822,6 @@ SearchableDropdown {
                 if (v === "follow locale") root.put("weekStartDay", undefined)
                 else root.put("weekStartDay", v.toLowerCase())
               }
-            }
-
-            PanelSeparator {
-              width: parent.width
-              foreground: Color.foreground
-            }
-
-            PanelSectionHeader {
-              text: "MEMENTO MORI"
-              foreground: Color.foreground
-            }
-
-            Row {
-              spacing: Style.space(10)
-
-              ToggleSwitch {
-                id: mementoToggle
-                anchors.verticalCenter: parent.verticalCenter
-                checked: root.setting("mementoMori", true) !== false
-                onToggled: root.put("mementoMori", !mementoToggle.checked)
-              }
-
-              Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "Show the life bar under the year"
-                color: Color.foreground
-                font.pixelSize: Style.font.body
-              }
-            }
-
-            // Deliberately no birth year or life expectancy here. Double-tap
-            // the year bar in the popup and it asks for both in place -- that
-            // gesture is inherited from the stock clock, and a second way to
-            // set the same two numbers would only be a way for them to
-            // disagree.
-            Text {
-              width: parent.width
-              wrapMode: Text.WordWrap
-              textFormat: Text.PlainText
-              text: "Double-tap the year bar in the popup to set your birth year "
-                + "and life expectancy. The bar stays hidden until a birth year is set."
-              color: Qt.darker(Color.foreground, 1.6)
-              font.pixelSize: Style.font.bodySmall
             }
 
 

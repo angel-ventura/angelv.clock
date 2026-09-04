@@ -18,8 +18,8 @@ Based on Omarchy's built-in `omarchy.clock` widget — see
   quoted in someone else's zone lands in yours at a glance.
 - **The home row is detected from `timedatectl`**, so it is always this
   machine's real zone. You never list it yourself.
-- **Memento mori can be switched off.** Set `"mementoMori": false` and the life
-  bar and its double-tap gesture are gone. On by default, as upstream.
+- **No memento mori.** The stock clock's life bar and its double-tap gesture
+  are not here. The year bar above the calendar stays.
 - **Calendar sync, read-only and off by default.** Point it at Google's or
   Apple's iCal link and the month grid gets event dots, with an agenda for the
   day you click and optional reminders before a meeting. See
@@ -137,7 +137,6 @@ The zones are configuration, not code. Edit this widget's entry in
 | `homeName` | The **label** for the home row only — the zone itself is detected |
 | `homeHour12` | 12-hour clock for the home row |
 | `zones` | IANA zone names to show as extra rows |
-| `mementoMori` | `false` removes the life bar and its gesture. On by default |
 | `calendarSync` | Rarely needed — sync follows whether a feed is configured. Set `false` to stay inert next to a `calendars.json` another tool owns |
 | `syncIntervalMinutes` | Minutes between background pulls. `0` is manual only. Default 15, floor 5 |
 | `notifyUpcomingEvents` | `false` silences reminders. On by default when sync is on |
