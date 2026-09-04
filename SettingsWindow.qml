@@ -8,6 +8,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "Model.js" as Model
 
 // The settings window: everything this plugin used to need a text editor for.
 //
@@ -82,7 +83,10 @@ Item {
     var sw = screen && screen.width > 0 ? screen.width : 1920
     var sh = screen && screen.height > 0 ? screen.height : 1080
     window.implicitWidth = Math.max(520, Math.min(900, Math.round(sw * 0.42)))
-    window.implicitHeight = Math.max(420, Math.min(820, Math.round(sh * 0.62)))
+    // 0.62 left the Calendars tab 14px short of fitting two feeds on a
+    // 2048x1152 desktop -- a common enough size to be worth clearing outright
+    // rather than making people scroll for the last control.
+    window.implicitHeight = Math.max(420, Math.min(880, Math.round(sh * 0.68)))
   }
 
   function open(payloadJson) {
@@ -202,7 +206,7 @@ Item {
 
   readonly property string resetHint: root.tab === "clock"
     ? "Reset the clock settings on this tab"
-    : (root.tab === "zones" ? "Reset the zone settings on this tab"
+    : (root.tab === "zones" ? "Put the zone list back to the shipped default"
                             : "Reset the calendar settings on this tab — your feeds are kept")
 
   function resetKeys(keys) {
@@ -220,7 +224,13 @@ Item {
   // A zone is stored either as a bare "Area/City" or as { tz, name } when it
   // carries a label. The popup reads both; this normalises only for editing.
   function zonesAsPairs() {
-    var zones = root.setting("zones", [])
+    var configured = root.setting("zones", null)
+    // Unset does not mean "no zones": the popup falls back to a built-in list,
+    // so this has to show the same thing or the window is describing a screen
+    // that does not exist. Resetting the tab looks like it did nothing for
+    // exactly this reason -- the shipped defaults are a reasonable four zones,
+    // and one config's worth of zones can match them exactly.
+    var zones = (configured && configured.length) ? configured : Model.normalizeZoneSetting(null)
     var out = []
     for (var i = 0; i < zones.length; i++) {
       var z = zones[i]
@@ -395,8 +405,9 @@ Item {
         ? "Reset clock settings?\n\nAgenda times and week start go back to their "
           + "defaults. Your zones and calendars are not touched."
         : (root.tab === "zones"
-          ? "Reset zone settings?\n\nRemoves every zone you have added, along with your "
-            + "home label. Your calendars are not touched."
+          ? "Reset zone settings?\n\nYour zone list goes back to the one the plugin "
+            + "ships with, not to empty, and your home label is cleared. Your calendars "
+            + "are not touched."
           : "Reset calendar settings?\n\nSync interval, reminders and where links open go "
             + "back to their defaults. Your calendar feeds are kept — remove those one at a time.")
       confirmText: "Reset"
